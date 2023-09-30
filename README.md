@@ -30,7 +30,10 @@
 - ~~Destroy crate on sun collision~~
 - ~~Respawn earth~~
 - ~~Camera follows crate~~
-- Debris gets stuck to crate on collision
+- ~~Debris gets stuck to crate on collision~~
+- Touch controls
+- New level / victory sound
+- Debris pickup sound (mergey splop)
 - ~~Die if crate collides with earth~~
 - Test in Chrome
 - Write short story/description
@@ -38,6 +41,7 @@
 
 
 ### Wishlist
+- Crate leaves a particle trail
 - Camera shake on death
 - Full screen flash on explosion
 - Logo 

@@ -28,8 +28,8 @@ mod button;
 mod utils;
 
 static PRIMARY_COLOR_HUE: f32 = 0.59;
-static MENU_MUSIC_VOLUME: f32 = 0.36;
-static PLAYING_MUSIC_VOLUME: f32 = 0.66;
+static MENU_MUSIC_VOLUME: f32 = 0.5;
+static PLAYING_MUSIC_VOLUME: f32 = 0.8;
 
 fn main() {
     let mut app = App::new();
@@ -60,7 +60,7 @@ fn main() {
     )
     .insert_resource(ClearColor(Color::hsl(PRIMARY_COLOR_HUE * 360.0, 0.2, 0.1)))
     .insert_resource(Score(0))
-    .insert_resource(Level(1))
+    .insert_resource(Level(4))
     .insert_resource(FixedTime::new_from_secs(1.0 / 60.0))
     .insert_resource(LaunchPower(Stopwatch::new()))
     .insert_resource(PrimaryColorHue(PRIMARY_COLOR_HUE))
@@ -69,16 +69,20 @@ fn main() {
     // .add_plugins(MuteButtonPlugin)
     .add_state::<GameState>()
     .add_systems(Startup, setup)
-    .add_systems(OnEnter(GameState::MainMenu), on_enter_menu)
+    .add_systems(OnEnter(GameState::Menu), on_enter_menu)
     .add_systems(OnEnter(GameState::Launched), on_enter_launched)
     .add_systems(OnEnter(GameState::ChargingLaunch), on_enter_charging)
     .add_systems(
-        OnExit(GameState::MainMenu),
+        OnExit(GameState::Menu),
         (on_exit_menu, on_enter_playing),
     )
     .add_systems(OnEnter(GameState::ReadyToLaunch), on_enter_ready)
     // .add_systems(OnExit(GameState::ReadyToLaunch), on_exit_playing)
     .add_systems(FixedUpdate, (apply_gravity))
+    .add_systems(
+        Update, 
+        (increase_crate_mass, orbit_debris).run_if(in_state(GameState::Launched))
+    )
     .add_systems(
         Update,
         (
@@ -96,19 +100,20 @@ fn main() {
             remove_crate_on_earth_collision,
             fade_explosions,
             update_camera_position,
+            attach_debris_to_crate_collision,
         ),
     )
     .add_systems(
         Update,
-        (start_launching).run_if(in_state(GameState::ReadyToLaunch)),
+        (start_launching, orbit_debris).run_if(in_state(GameState::ReadyToLaunch)),
     )
     .add_systems(
         Update,
-        (update_launch_power, launch).run_if(in_state(GameState::ChargingLaunch)),
+        (update_launch_power, launch, orbit_debris).run_if(in_state(GameState::ChargingLaunch)),
     )
     .add_systems(
         Update,
-        (interact_play_button,).run_if(in_state(GameState::MainMenu)),
+        (interact_play_button,).run_if(in_state(GameState::Menu)),
     )
     .add_systems(
         Update,
@@ -124,7 +129,7 @@ fn main() {
 #[derive(States, Clone, Eq, PartialEq, Debug, Hash, Default)]
 enum GameState {
     #[default]
-    MainMenu,
+    Menu,
     ReadyToLaunch,
     ChargingLaunch,
     Launched,
@@ -173,7 +178,26 @@ fn setup(
     mut sun_materials: ResMut<Assets<SunMaterial>>,
     mut bg_materials: ResMut<Assets<BackgroundMaterial>>,
     asset_server: Res<AssetServer>,
+    level: Res<Level>,
 ) {
+    // spawn score text
+    commands.spawn((
+        ScoreText,
+        TextBundle::from_section(
+            format!("Level {}", level.0),
+            TextStyle {
+                font_size: 64.0,
+                color: Color::WHITE,
+                ..default()
+            },
+        )
+        .with_style(Style {
+            position_type: PositionType::Absolute,
+            margin: UiRect::new(Val::Auto, Val::Auto, Val::Vh(20.0), Val::Auto),
+            ..default()
+        }),
+    ));
+
     // music
     commands.spawn((
         AudioBundle {
@@ -255,25 +279,6 @@ fn setup(
             intensity: 0.14,
             ..default()
         },
-    ));
-
-    // spawn score text
-    commands.spawn((
-        ScoreText,
-        TextBundle::from_section(
-            format!("Score: 0"),
-            TextStyle {
-                font_size: 64.0,
-                color: Color::WHITE,
-                ..default()
-            },
-        )
-        .with_style(Style {
-            position_type: PositionType::Absolute,
-            margin: UiRect::new(Val::Auto, Val::Auto, Val::Vh(20.0), Val::Auto),
-            display: Display::None,
-            ..default()
-        }),
     ));
 
     // AssetHandle example
@@ -400,6 +405,43 @@ fn setup(
     // });
 }
 
+// debris orbit the sun
+fn orbit_debris(
+    time: Res<Time>,
+    mut q_debris: Query<&mut Transform, (With<Debris>, Without<PickedUp>)>,
+    q_sun: Query<&Transform, (With<Sun>, Without<Debris>)>,
+    level: Res<Level>,
+) {
+    // return;
+
+    let speed = ((level.0 as f32 - 3.0).max(0.0) * 0.1).min(0.3);
+
+    for mut transform in q_debris.iter_mut() {
+        if let Ok(sun_transform) = q_sun.get_single() {
+            let sun_pos = sun_transform.translation.xy();
+            let debris_pos = transform.translation.xy();
+            let distance = sun_pos.distance(debris_pos);
+            let direction = (sun_pos - debris_pos).normalize();
+            let direction_angle = direction.y.atan2(direction.x);
+
+            // move position along direction_angle
+            let new_direction_angle = direction_angle + time.delta_seconds() * speed;
+            let new_direction = Vec2::new(new_direction_angle.cos(), new_direction_angle.sin());
+            let new_position = sun_pos - new_direction * distance;
+            transform.translation = vec3(new_position.x, new_position.y, 0.0);
+        }
+    }
+}
+
+fn increase_crate_mass(
+    mut q_crate: Query<&mut Mass, With<Crate>>,
+    time: Res<Time>,
+) {
+    for mut mass in q_crate.iter_mut() {
+        mass.0 += time.delta_seconds() * 0.35;
+    }
+}
+
 // scale down explosions in size, and remove when small enough
 fn fade_explosions(
     time: Res<Time>,
@@ -424,7 +466,7 @@ fn on_enter_ready(
     q_cannon: Query<Entity, With<Cannon>>,
     asset_server: Res<AssetServer>,
 ) {
-    // spawn currentcrate in cannon
+    // spawn crate in cannon
     for cannon_ent in q_cannon.iter() {
         commands.entity(cannon_ent).with_children(|parent| {
             parent.spawn((
@@ -436,7 +478,7 @@ fn on_enter_ready(
                     ..default()
                 },
                 Crate,
-                Mass(1.0),
+                Mass(0.5),
                 CurrentCrate,
             ));
         });
@@ -549,7 +591,7 @@ fn on_enter_launched(
     let diff_normal = translation_diff.normalize().xy();
 
     // add Velocity to current crate
-    let power = launch_power.0.elapsed_secs() * 1.2;
+    let power = launch_power.0.elapsed_secs() * 1.3;
     commands
         .entity(crate_ent)
         .insert(Velocity(diff_normal * power));
@@ -629,7 +671,7 @@ fn update_cannon_transform(
                 let cursor_x_offset_from_center = cursor.x - window_x_center;
                 let x_pos = cursor_x_offset_from_center.clamp(-max_offset, max_offset);
                 let x_pos_rel = x_pos / max_offset;
-                let angle = x_pos_rel * PI / 2.0 * 0.8;
+                let angle = x_pos_rel * PI / 2.0 * 0.9;
                 let radius = 6.0;
                 let x = angle.sin() * radius;
                 let y = angle.cos() * radius;
@@ -669,7 +711,7 @@ fn spin_crates(time: Res<Time>, mut q_crate: Query<&mut Transform, With<Crate>>)
     }
 }
 
-fn spin_debris(time: Res<Time>, mut q_debris: Query<(Entity, &mut Transform), With<Debris>>) {
+fn spin_debris(time: Res<Time>, mut q_debris: Query<(Entity, &mut Transform), (With<Debris>, Without<PickedUp>)>) {
     for (entity, mut transform) in q_debris.iter_mut() {
         let id = entity.index();
 
@@ -707,7 +749,12 @@ struct Level(usize);
 #[derive(Resource)]
 struct LaunchPower(Stopwatch);
 
-fn on_enter_menu(mut commands: Commands, music_controller: Query<&AudioSink, With<Music>>) {
+fn on_enter_menu(
+    mut commands: Commands,
+    music_controller: Query<&AudioSink, With<Music>>,
+    mut q_score_text: Query<(Entity, &mut Style, &mut Text), With<ScoreText>>,
+    level: Res<Level>,
+) {
     // set music volume
     for sink in music_controller.iter() {
         sink.set_volume(MENU_MUSIC_VOLUME);
@@ -716,9 +763,24 @@ fn on_enter_menu(mut commands: Commands, music_controller: Query<&AudioSink, Wit
     commands
         .spawn_text_button("Play", PRIMARY_COLOR_HUE)
         .insert(PlayButton);
+
+    // update level text
+    for (ent, mut style, mut text) in q_score_text.iter_mut() {
+        // set visible
+        style.display = Display::Flex;
+
+        for section in text.sections.iter_mut() {
+            section.value = format!("Level {}", level.0);
+        }
+    }
 }
 
-fn on_exit_menu() {}
+fn on_exit_menu(mut q_score_text: Query<(Entity, &mut Style, &mut Text), With<ScoreText>>) {
+    for (ent, mut style, mut text) in q_score_text.iter_mut() {
+        // set hidden
+        style.display = Display::None;
+    }
+}
 
 #[derive(Resource)]
 struct GameTime(Stopwatch);
@@ -732,14 +794,16 @@ fn on_enter_playing(
     // circle_mesh: Res<AssetHandle<Circle, Mesh>>,
     // circle_mat: Res<AssetHandle<Circle, ColorMaterial>>,
     debris_scene: Res<AssetHandle<Debris, Scene>>,
+    level: Res<Level>,
+    q_debris: Query<Entity, With<Debris>>,
 ) {
     // reset score
-    score.0 = 0;
+    // score.0 = 0;
 
-    // hide score text
-    for mut style in q_score_text.iter_mut() {
-        style.display = Display::None;
-    }
+    // // hide score text
+    // for mut style in q_score_text.iter_mut() {
+    //     style.display = Display::None;
+    // }
 
     // start stopwatch
     commands.insert_resource(GameTime(Stopwatch::new()));
@@ -768,6 +832,10 @@ fn on_enter_playing(
         commands.entity(earth_ent).insert(Visibility::Visible);
     }
 
+    // despawn all existing debris
+    for debris_ent in q_debris.iter() {
+        commands.entity(debris_ent).despawn_recursive();
+    }
 
     // // spawn debris
     // for x in -3..=3 {
@@ -785,22 +853,24 @@ fn on_enter_playing(
     //             ));
     //     }
     // }
-    // spawn debris in a circle
-    let radius = 25.0;
-    let num_debris = 2;
+    // spawn debris in a circle around sun
+    let radius = 22.0 + level.0 as f32 * 1.0;
+    let num_debris = 0 + level.0 * 2 - 1;
     for i in 0..num_debris {
-        let angle = i as f32 / num_debris as f32 * PI * 2.0;
-        let x = angle.sin() * radius;
-        let y = angle.cos() * radius;
+        let mut angle = i as f32 / num_debris as f32 * PI * 2.0 + PI - 0.7 + level.0 as f32 - 1.0;
+        angle *= 1.0 + level.0 as f32 * 0.3;
+        let x = angle.sin() * radius + (i as f32 * 12.5 + 1.0).sin() * 5.0;
+        let y = angle.cos() * radius + (i as f32 * 48.3 + 4.0).sin() * 5.0;
         commands.spawn((
             Debris,
             SceneBundle {
                 scene: debris_scene.handle.clone(),
                 transform: Transform::from_xyz(x, y + 15.0, 0.0)
-                    .with_scale(Vec3::splat(1.0))
-                    .with_rotation(Quat::from_euler(EulerRot::XYZ, 1.0 + x, 0.0 + y * 2.0, 1.0)),
+                    .with_scale(Vec3::splat(2.0))
+                    .with_rotation(Quat::from_euler(EulerRot::XYZ, 1.0 + x, 0.0 + y * 2.0, 0.0)),
                 ..default()
             },
+            // Velocity(vec2(rand::random::<f32>() - 0.5, rand::random::<f32>() - 0.5)),
         ));
     }
 }
@@ -844,6 +914,41 @@ fn update_music_speed(
         let n = time.delta_seconds() * 8.0;
         let new_speed = current_speed * (1.0 - n) + target_speed * n;
         sink.set_speed(new_speed.clamp(0.0, 5.0));
+    }
+}
+
+#[derive(Component)]
+struct PickedUp;
+
+fn attach_debris_to_crate_collision(
+    mut commands: Commands,
+    mut q_crate: Query<(Entity, &Transform, &mut Mass), With<CurrentCrate>>,
+    mut q_debris: Query<
+        (Entity, &mut Transform),
+        (With<Debris>, Without<PickedUp>, Without<CurrentCrate>),
+    >,
+) {
+    for (crate_ent, crate_transform, mut crate_mass) in q_crate.iter_mut() {
+        for (debris_ent, mut debris_transform) in q_debris.iter_mut() {
+            let debris_pos = debris_transform.translation.xy();
+            let crate_pos = crate_transform.translation.xy();
+
+            let distance = debris_pos.distance(crate_pos);
+            if distance < 3.0 {
+                // attach debris to crate
+                commands.entity(crate_ent).add_child(debris_ent);
+                commands.entity(debris_ent).insert(PickedUp);
+
+                let diff = debris_transform.translation - crate_transform.translation;
+
+                // new debris pos = diff transformed by crate rotation
+                let new_debris_pos = crate_transform.rotation.inverse() * diff;
+                debris_transform.translation = new_debris_pos;
+
+                // increase crate mass
+                crate_mass.0 += 0.22;
+            }
+        }
     }
 }
 
@@ -900,12 +1005,8 @@ fn remove_crate_on_earth_collision(
                         PbrBundle {
                             mesh: explosion_mesh.handle.clone().into(),
                             material: explosion_mtl.handle.clone().into(),
-                            transform: Transform::from_xyz(
-                                earth_pos.x,
-                                earth_pos.y,
-                                1.0,
-                            )
-                            .with_scale(Vec3::splat(rand::random::<f32>())),
+                            transform: Transform::from_xyz(earth_pos.x, earth_pos.y, 1.0)
+                                .with_scale(Vec3::splat(rand::random::<f32>())),
                             ..default()
                         },
                         Explosion,
@@ -920,7 +1021,7 @@ fn remove_crate_on_earth_collision(
                 commands.entity(earth_ent).insert(Visibility::Hidden);
 
                 // enter ready to launch state
-                next_state.set(GameState::MainMenu);
+                next_state.set(GameState::Menu);
             }
         }
     }
@@ -935,6 +1036,8 @@ fn remove_crate_on_sun_collision(
     mut next_state: ResMut<NextState<GameState>>,
     explosion_mesh: Res<AssetHandle<Explosion, Mesh>>,
     explosion_mtl: Res<AssetHandle<Explosion, StandardMaterial>>,
+    q_floating_debris: Query<Entity, (With<Debris>, Without<PickedUp>)>,
+    mut level: ResMut<Level>,
 ) {
     for (crate_ent, crate_global_transform) in q_crate.iter_mut() {
         for sun_transform in q_sun.iter() {
@@ -975,8 +1078,18 @@ fn remove_crate_on_sun_collision(
                     Explosion,
                 ));
 
-                // enter ready to launch state
-                next_state.set(GameState::ReadyToLaunch);
+                // if 0 debris, increase level
+                let num_debris = q_floating_debris.iter().count();
+                if num_debris == 0 {
+                    level.0 += 1;
+
+                    // enter menu state for next level
+                    next_state.set(GameState::Menu);
+                } else {
+                    // enter ready to launch state
+                    next_state.set(GameState::ReadyToLaunch);
+                }
+
             }
         }
     }
