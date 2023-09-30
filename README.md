@@ -26,16 +26,20 @@
 - ~~"Launching" sound (like worms bazooka)~~
 - ~~Music (spacey vital synth + slow amen beat? + murmuring sun bass)~~
 - ~~Spawn debris~~
-- Destroy crate on sun collision
+- ~~Explosions~~
+- ~~Destroy crate on sun collision~~
+- ~~Respawn earth~~
+- ~~Camera follows crate~~
 - Debris gets stuck to crate on collision
-- Die if crate collides with earth
-
+- ~~Die if crate collides with earth~~
 - Test in Chrome
 - Write short story/description
 - Give feedback to 100 games
 
 
 ### Wishlist
+- Camera shake on death
+- Full screen flash on explosion
 - Logo 
 - Master bgm
 - Cheering pikmin sound when launching

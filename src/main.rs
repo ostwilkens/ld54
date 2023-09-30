@@ -95,6 +95,7 @@ fn main() {
             remove_crate_on_sun_collision,
             remove_crate_on_earth_collision,
             fade_explosions,
+            update_camera_position,
         ),
     )
     .add_systems(
@@ -280,6 +281,10 @@ fn setup(
     //     materials.add(Color::hsl((PRIMARY_COLOR_HUE - 0.5) * 360.0, 0.7, 0.8).into()),
     // ));
 
+    commands.insert_resource(AssetHandle::<Debris, Scene>::new(
+        asset_server.load("debris.glb#Scene0"),
+    ));
+
     // explosion asset handles
     commands.insert_resource(AssetHandle::<Explosion, Mesh>::new(
         meshes.add(shape::Circle::new(1.0).into()).into(),
@@ -363,42 +368,6 @@ fn setup(
     //         transform: Transform::from_xyz(0.0, -25.0, 1.0),
     //         ..default()
     //     }, Explosion));
-
-    // // spawn debris
-    // for x in -3..=3 {
-    //     for y in -3..=3 {
-    //         commands
-    //             .spawn((
-    //                 Debris,
-    //                 SceneBundle {
-    //                     scene: asset_server.load("debris.glb#Scene0"),
-    //                     transform: Transform::from_xyz(x as f32 * 4.0, y as f32 * 4.0, 0.0)
-    //                         .with_scale(Vec3::splat(1.0))
-    //                         .with_rotation(Quat::from_euler(EulerRot::XYZ, 1.0, 0.0, 1.0)),
-    //                     ..default()
-    //                 },
-    //             ));
-    //     }
-    // }
-
-    // spawn debris in a circle
-    let radius = 25.0;
-    let num_debris = 8;
-    for i in 0..num_debris {
-        let angle = i as f32 / num_debris as f32 * PI * 2.0;
-        let x = angle.sin() * radius;
-        let y = angle.cos() * radius;
-        commands.spawn((
-            Debris,
-            SceneBundle {
-                scene: asset_server.load("debris.glb#Scene0"),
-                transform: Transform::from_xyz(x, y + 15.0, 0.0)
-                    .with_scale(Vec3::splat(1.0))
-                    .with_rotation(Quat::from_euler(EulerRot::XYZ, 1.0 + x, 0.0 + y * 2.0, 1.0)),
-                ..default()
-            },
-        ));
-    }
 
     // spawn cannon + crate
     commands.spawn((
@@ -580,7 +549,7 @@ fn on_enter_launched(
     let diff_normal = translation_diff.normalize().xy();
 
     // add Velocity to current crate
-    let power = launch_power.0.elapsed_secs() * 1.0;
+    let power = launch_power.0.elapsed_secs() * 1.2;
     commands
         .entity(crate_ent)
         .insert(Velocity(diff_normal * power));
@@ -627,7 +596,7 @@ fn apply_gravity(
             let crate_pos = crate_transform.translation;
             let distance = sun_pos.distance(crate_pos);
             let direction = (sun_pos - crate_pos).normalize();
-            let gravity = (direction * 10.0 * mass.0) / distance.powi(2);
+            let gravity = (direction * 2.5 * mass.0) / distance.powi(2);
             velocity.0 += Vec2::new(gravity.x, gravity.y);
         }
     }
@@ -759,8 +728,10 @@ fn on_enter_playing(
     mut score: ResMut<Score>,
     mut q_score_text: Query<&mut Style, With<ScoreText>>,
     music_controller: Query<&AudioSink, With<Music>>,
+    q_earth: Query<Entity, With<Earth>>,
     // circle_mesh: Res<AssetHandle<Circle, Mesh>>,
     // circle_mat: Res<AssetHandle<Circle, ColorMaterial>>,
+    debris_scene: Res<AssetHandle<Debris, Scene>>,
 ) {
     // reset score
     score.0 = 0;
@@ -791,6 +762,47 @@ fn on_enter_playing(
     //     RaycastPickTarget::default(),
     //     On::<Pointer<Down>>::run(on_click_circle),
     // ));
+
+    // ensure Visibility::Visible on earth
+    for earth_ent in q_earth.iter() {
+        commands.entity(earth_ent).insert(Visibility::Visible);
+    }
+
+
+    // // spawn debris
+    // for x in -3..=3 {
+    //     for y in -3..=3 {
+    //         commands
+    //             .spawn((
+    //                 Debris,
+    //                 SceneBundle {
+    //                     scene: asset_server.load("debris.glb#Scene0"),
+    //                     transform: Transform::from_xyz(x as f32 * 4.0, y as f32 * 4.0, 0.0)
+    //                         .with_scale(Vec3::splat(1.0))
+    //                         .with_rotation(Quat::from_euler(EulerRot::XYZ, 1.0, 0.0, 1.0)),
+    //                     ..default()
+    //                 },
+    //             ));
+    //     }
+    // }
+    // spawn debris in a circle
+    let radius = 25.0;
+    let num_debris = 2;
+    for i in 0..num_debris {
+        let angle = i as f32 / num_debris as f32 * PI * 2.0;
+        let x = angle.sin() * radius;
+        let y = angle.cos() * radius;
+        commands.spawn((
+            Debris,
+            SceneBundle {
+                scene: debris_scene.handle.clone(),
+                transform: Transform::from_xyz(x, y + 15.0, 0.0)
+                    .with_scale(Vec3::splat(1.0))
+                    .with_rotation(Quat::from_euler(EulerRot::XYZ, 1.0 + x, 0.0 + y * 2.0, 1.0)),
+                ..default()
+            },
+        ));
+    }
 }
 
 fn on_exit_playing(
@@ -878,12 +890,11 @@ fn remove_crate_on_earth_collision(
                         mesh: explosion_mesh.handle.clone().into(),
                         material: explosion_mtl.handle.clone().into(),
                         transform: Transform::from_xyz(earth_pos.x, earth_pos.y, 1.0)
-                            .with_scale(Vec3::splat(6.0)),
+                            .with_scale(Vec3::splat(7.0)),
                         ..default()
                     },
                     Explosion,
                 ));
-
                 for _ in 0..25 {
                     commands.spawn((
                         PbrBundle {
@@ -919,18 +930,18 @@ fn remove_crate_on_sun_collision(
     asset_server: Res<AssetServer>,
     mut commands: Commands,
     mut score: ResMut<Score>,
-    mut q_crate: Query<(Entity, &Transform), With<Crate>>,
+    mut q_crate: Query<(Entity, &GlobalTransform), With<Crate>>,
     q_sun: Query<&Transform, With<Sun>>,
     mut next_state: ResMut<NextState<GameState>>,
     explosion_mesh: Res<AssetHandle<Explosion, Mesh>>,
     explosion_mtl: Res<AssetHandle<Explosion, StandardMaterial>>,
 ) {
-    for (crate_ent, crate_transform) in q_crate.iter_mut() {
+    for (crate_ent, crate_global_transform) in q_crate.iter_mut() {
         for sun_transform in q_sun.iter() {
             let sun_pos = sun_transform.translation.xy();
-            let crate_pos = crate_transform.translation.xy();
+            let crate_pos = crate_global_transform.translation().xy();
             let distance = sun_pos.distance(crate_pos);
-            if distance < 12.0 {
+            if distance < 13.0 {
                 // remove crate
                 commands.entity(crate_ent).despawn_recursive();
 
@@ -978,6 +989,27 @@ fn while_playing(
     mut next_state: ResMut<NextState<GameState>>,
 ) {
     game_time.0.tick(time.delta());
+}
+
+fn update_camera_position(
+    mut q_camera: Query<&mut Transform, (With<Camera>, Without<CurrentCrate>)>,
+    q_current_crate: Query<&Transform, With<CurrentCrate>>,
+    time: Res<Time>,
+) {
+    let mut target_camera_xy = vec2(0.0, 0.0);
+
+    if let Ok(current_crate_transform) = q_current_crate.get_single() {
+        let crate_xy = current_crate_transform.translation.xy();
+        target_camera_xy = crate_xy;
+    }
+
+    for mut camera_transform in q_camera.iter_mut() {
+        let current_camera_xy = camera_transform.translation.xy();
+        let new_camera_xy = current_camera_xy.lerp(target_camera_xy, time.delta_seconds() * 2.0);
+        let new_camera_translation = vec3(new_camera_xy.x, new_camera_xy.y, 10.0);
+
+        camera_transform.translation = new_camera_translation;
+    }
 }
 
 fn always(time: Res<Time>, mut commands: Commands, mut next_state: ResMut<NextState<GameState>>) {}
