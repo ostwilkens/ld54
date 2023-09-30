@@ -24,11 +24,11 @@
 - ~~Gravity~~
 - Destroy crate on sun collision
 - Die if crate collides with earth
-- Create debris model
+- ~~Create debris model~~
 - Spawn debris
 - Debris gets stuck to crate on collision
-- "Launching" sound (like worms bazooka)
-- Music (spacey vital synth + slow amen beat? + murmuring sun bass)
+- ~~"Launching" sound (like worms bazooka)~~
+- ~~Music (spacey vital synth + slow amen beat? + murmuring sun bass)~~
 - Test in Chrome
 - Write short story/description
 - Give feedback to 100 games
