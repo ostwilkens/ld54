@@ -17,8 +17,12 @@
 - ~~Simplest sun shader (2d sdf circle)~~
 - ~~Simplest earth circle~~
 - ~~Scrolling stars in background~~
-- Bloom
-- Aimable cannon around earth
+- ~~Bloom~~
+- ~~Aimable cannon around earth~~
+- ~~Click to launch~~
+- Gravity
+- "Launching" sound (like worms bazooka)
+- Debris gets stuck to crate on collision
 - Music (spacey vital synth + slow amen beat? + murmuring sun bass)
 - Test in Chrome
 - Write short story/description
@@ -26,6 +30,9 @@
 
 
 ### Wishlist
+- Cheering pikmin sound when launching
+- Juice
+- Performance
 - Test in Safari
 - Test in Firefox
 - Test Linux native

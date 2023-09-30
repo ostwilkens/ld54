@@ -4,6 +4,7 @@ use bevy::{
     app::AppExit,
     asset::ChangeWatcher,
     audio::{PlaybackMode, Volume, VolumeLevel},
+    core_pipeline::{bloom::BloomSettings, tonemapping::Tonemapping},
     math::{vec2, vec3},
     prelude::*,
     reflect::{TypePath, TypeUuid},
@@ -12,16 +13,17 @@ use bevy::{
         render_resource::{AddressMode, AsBindGroup, SamplerDescriptor, ShaderRef},
     },
     sprite::{Material2d, Material2dPlugin, MaterialMesh2dBundle},
-    time::Stopwatch, core_pipeline::bloom::BloomSettings,
+    time::Stopwatch,
+    window::PrimaryWindow,
 };
 use button::{interact_button, ButtonCommands};
-use mute::MuteButtonPlugin;
+// use mute::MuteButtonPlugin;
 
 #[cfg(feature = "dev")]
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 
 mod button;
-mod mute;
+// mod mute;
 mod utils;
 
 static PRIMARY_COLOR_HUE: f32 = 0.59;
@@ -55,18 +57,24 @@ fn main() {
                 },
             }),
     )
-    .insert_resource(ClearColor(Color::hsl(PRIMARY_COLOR_HUE * 360.0, 0.2, 0.15)))
+    .insert_resource(ClearColor(Color::hsl(PRIMARY_COLOR_HUE * 360.0, 0.2, 0.1)))
     .insert_resource(Score(0))
+    .insert_resource(Level(1))
+    .insert_resource(LaunchPower(Stopwatch::new()))
     .insert_resource(PrimaryColorHue(PRIMARY_COLOR_HUE))
     .add_plugins(MaterialPlugin::<SunMaterial>::default())
     .add_plugins(MaterialPlugin::<BackgroundMaterial>::default())
-    .add_plugins(MuteButtonPlugin)
+    // .add_plugins(MuteButtonPlugin)
     .add_state::<GameState>()
     .add_systems(Startup, setup)
-    .add_systems(OnEnter(GameState::Menu), on_enter_menu)
-    .add_systems(OnExit(GameState::Menu), on_exit_menu)
-    .add_systems(OnEnter(GameState::Playing), on_enter_playing)
-    .add_systems(OnExit(GameState::Playing), on_exit_playing)
+    .add_systems(OnEnter(GameState::MainMenu), on_enter_menu)
+    .add_systems(OnEnter(GameState::Launched), on_enter_launched)
+    .add_systems(
+        OnExit(GameState::MainMenu),
+        (on_exit_menu, on_enter_playing),
+    )
+    // .add_systems(OnEnter(GameState::ReadyToLaunch), on_enter_playing)
+    // .add_systems(OnExit(GameState::ReadyToLaunch), on_exit_playing)
     .add_systems(
         Update,
         (
@@ -74,15 +82,26 @@ fn main() {
             interact_button,
             always,
             spin_earth,
+            update_cannon_transform,
+            rotate_crates,
+            apply_velocity,
         ),
     )
     .add_systems(
         Update,
-        (interact_play_button,).run_if(in_state(GameState::Menu)),
+        (start_launching).run_if(in_state(GameState::ReadyToLaunch)),
     )
     .add_systems(
         Update,
-        (while_playing,).run_if(in_state(GameState::Playing)),
+        (update_launch_power, launch).run_if(in_state(GameState::ChargingLaunch)),
+    )
+    .add_systems(
+        Update,
+        (interact_play_button,).run_if(in_state(GameState::MainMenu)),
+    )
+    .add_systems(
+        Update,
+        (while_playing,).run_if(in_state(GameState::ReadyToLaunch)),
     );
 
     #[cfg(feature = "dev")]
@@ -94,8 +113,10 @@ fn main() {
 #[derive(States, Clone, Eq, PartialEq, Debug, Hash, Default)]
 enum GameState {
     #[default]
-    Menu,
-    Playing,
+    MainMenu,
+    ReadyToLaunch,
+    ChargingLaunch,
+    Launched,
 }
 
 #[derive(Component)]
@@ -145,6 +166,7 @@ fn setup(
                 hdr: true,
                 ..default()
             },
+            tonemapping: Tonemapping::None,
             projection: Projection::Orthographic(OrthographicProjection {
                 viewport_origin: vec2(0.5, 0.5),
                 scaling_mode: ScalingMode::FixedVertical(720.0),
@@ -156,17 +178,10 @@ fn setup(
             ..default()
         },
         BloomSettings {
-            intensity: 0.3, // the default is 0.3
+            intensity: 0.14,
             ..default()
         },
     ));
-    // commands.spawn(Camera2dBundle {
-    //     projection: OrthographicProjection {
-    //         scaling_mode: ScalingMode::FixedVertical(720.0),
-    //         ..default()
-    //     },
-    //     ..default()
-    // });
 
     // spawn score text
     commands.spawn((
@@ -214,16 +229,19 @@ fn setup(
     });
 
     // spawn sun
-    commands.spawn(MaterialMeshBundle {
-        mesh: meshes.add(shape::Plane::from_size(30.0).into()).into(),
-        material: sun_materials.add(SunMaterial {
-            color: Color::ORANGE_RED,
-            color_texture: asset_server.load("noise.png"),
-        }),
-        transform: Transform::from_translation(vec3(0.0, 15.0, 0.0))
-            .with_rotation(Quat::from_rotation_x(PI / 2.0)),
-        ..default()
-    });
+    commands.spawn((
+        MaterialMeshBundle {
+            mesh: meshes.add(shape::Plane::from_size(30.0).into()).into(),
+            material: sun_materials.add(SunMaterial {
+                color: Color::ORANGE_RED,
+                color_texture: asset_server.load("noise.png"),
+            }),
+            transform: Transform::from_translation(vec3(0.0, 15.0, 0.0))
+                .with_rotation(Quat::from_rotation_x(PI / 2.0)),
+            ..default()
+        },
+        Sun,
+    ));
 
     // spawn point light
     commands.spawn(PointLightBundle {
@@ -247,10 +265,153 @@ fn setup(
             ..Default::default()
         })
         .insert(Earth);
+
+    // spawn cannon + crate
+    commands
+        .spawn((
+            Cannon,
+            SpatialBundle {
+                transform: Transform::from_translation(vec3(0.0, 0.0, 0.0)),
+                ..default()
+            },
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                SceneBundle {
+                    scene: asset_server.load("crate.glb#Scene0"),
+                    transform: Transform::from_xyz(0.0, 0.0, 0.0)
+                        .with_scale(Vec3::splat(1.0))
+                        .with_rotation(Quat::from_euler(EulerRot::XYZ, 1.0, 0.0, 1.0)),
+                    ..default()
+                },
+                Crate,
+                CurrentCrate,
+            ));
+        });
 }
 
 #[derive(Component)]
 struct Earth;
+
+#[derive(Component)]
+struct Sun;
+
+#[derive(Component)]
+struct Cannon;
+
+#[derive(Component)]
+struct Crate;
+
+#[derive(Component)]
+struct CurrentCrate;
+
+#[derive(Component)]
+struct Velocity(Vec2);
+
+// if in state ReadyToLaunch & LMB pressed, go to ChargingLaunch
+fn start_launching(
+    mut commands: Commands,
+    mut next_state: ResMut<NextState<GameState>>,
+    mouse_button_input: Res<Input<MouseButton>>,
+    mut launch_power: ResMut<LaunchPower>,
+) {
+    if mouse_button_input.just_pressed(MouseButton::Left) {
+        next_state.set(GameState::ChargingLaunch);
+
+        // reset launch_power
+        launch_power.0.reset();
+    }
+}
+
+fn update_launch_power(
+    mut launch_power: ResMut<LaunchPower>,
+    time: Res<Time>,
+    mut next_state: ResMut<NextState<GameState>>,
+) {
+    launch_power.0.tick(time.delta());
+
+    // if launch_power > 1.0, go to Launched
+    if launch_power.0.elapsed_secs() > 1.0 {
+        next_state.set(GameState::Launched);
+    }
+}
+
+fn on_enter_launched(
+    mut commands: Commands,
+    launch_power: Res<LaunchPower>,
+    current_crate: Query<Entity, With<CurrentCrate>>,
+) {
+    // add Velocity to current crate
+    let power = launch_power.0.elapsed_secs() * 1.0;
+    commands
+        .entity(current_crate.single())
+        .insert(Velocity(Vec2::new(0.0, power)));
+}
+
+// if in state ChargingLaunch & LMB not pressed, go to Launched
+fn launch(
+    mut commands: Commands,
+    mut next_state: ResMut<NextState<GameState>>,
+    mouse_button_input: Res<Input<MouseButton>>,
+    current_crate: Query<Entity, With<CurrentCrate>>,
+    launch_power: Res<LaunchPower>,
+) {
+    if mouse_button_input.just_released(MouseButton::Left) {
+        next_state.set(GameState::Launched);
+    }
+}
+
+fn apply_velocity(mut q_crate: Query<(&mut Transform, &Velocity), With<Crate>>) {
+    for (mut transform, velocity) in q_crate.iter_mut() {
+        transform.translation += Vec3::new(velocity.0.x, velocity.0.y, 0.0);
+    }
+}
+
+// based on cursor position, move cannon in an arc around earth
+fn update_cannon_transform(
+    mut q_cannon: Query<&mut Transform, With<Cannon>>,
+    q_earth: Query<&Transform, (With<Earth>, Without<Cannon>)>,
+    // mut mouse_pos: EventReader<CursorMoved>,
+    primary_window: Query<&Window, With<PrimaryWindow>>,
+    time: Res<Time>,
+) {
+    if let Ok(mut window) = primary_window.get_single() {
+        let window_width = window.width() as f32;
+        let window_x_center = window_width / 2.0;
+        let max_offset = ((window_width / 2.0) * 0.75).min(180.0);
+
+        if let Some(cursor) = window.cursor_position() {
+            for mut transform in q_cannon.iter_mut() {
+                let earth_transform = q_earth.single();
+
+                let cursor_x_offset_from_center = cursor.x - window_x_center;
+                let x_pos = cursor_x_offset_from_center.clamp(-max_offset, max_offset);
+                let x_pos_rel = x_pos / max_offset;
+                let angle = x_pos_rel * PI / 2.0 * 0.8;
+                let radius = 8.0;
+                let x = angle.sin() * radius;
+                let y = angle.cos() * radius;
+
+                let n = time.delta_seconds() * 16.0;
+
+                let current_translation = transform.translation;
+                let target_translation = Vec3::new(x, y, 0.0) + earth_transform.translation;
+                let current_rotation = transform.rotation;
+                let target_rotation = Quat::from_rotation_y(angle);
+                let new_translation = current_translation.lerp(target_translation, n);
+                let new_rotation = current_rotation.lerp(target_rotation, n);
+                transform.translation = new_translation;
+                transform.rotation = new_rotation;
+            }
+        }
+    }
+}
+
+fn rotate_crates(time: Res<Time>, mut q_crate: Query<&mut Transform, With<Crate>>) {
+    for mut transform in q_crate.iter_mut() {
+        transform.rotate(Quat::from_rotation_z(time.delta_seconds() * 1.0));
+    }
+}
 
 fn spin_earth(time: Res<Time>, mut q_earth: Query<&mut Transform, With<Earth>>) {
     for mut transform in q_earth.iter_mut() {
@@ -267,7 +428,7 @@ fn interact_play_button(
         match interaction {
             Interaction::Pressed => {
                 style.display = Display::None;
-                next_state.set(GameState::Playing);
+                next_state.set(GameState::ReadyToLaunch);
             }
             _ => {}
         };
@@ -276,6 +437,12 @@ fn interact_play_button(
 
 #[derive(Resource)]
 struct Score(usize);
+
+#[derive(Resource)]
+struct Level(usize);
+
+#[derive(Resource)]
+struct LaunchPower(Stopwatch);
 
 fn on_enter_menu(mut commands: Commands, music_controller: Query<&AudioSink, With<Music>>) {
     // set music volume
