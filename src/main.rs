@@ -1,9 +1,18 @@
+use std::{f32::consts::PI, time::Duration};
+
 use bevy::{
     app::AppExit,
+    asset::ChangeWatcher,
     audio::{PlaybackMode, Volume, VolumeLevel},
+    math::{vec2, vec3},
     prelude::*,
-    render::camera::ScalingMode,
-    time::Stopwatch,
+    reflect::{TypePath, TypeUuid},
+    render::{
+        camera::ScalingMode,
+        render_resource::{AddressMode, AsBindGroup, SamplerDescriptor, ShaderRef},
+    },
+    sprite::{Material2d, Material2dPlugin, MaterialMesh2dBundle},
+    time::Stopwatch, core_pipeline::bloom::BloomSettings,
 };
 use button::{interact_button, ButtonCommands};
 use mute::MuteButtonPlugin;
@@ -15,7 +24,7 @@ mod button;
 mod mute;
 mod utils;
 
-static PRIMARY_COLOR_HUE: f32 = 0.5;
+static PRIMARY_COLOR_HUE: f32 = 0.59;
 static MENU_MUSIC_VOLUME: f32 = 0.36;
 static PLAYING_MUSIC_VOLUME: f32 = 0.66;
 
@@ -34,13 +43,23 @@ fn main() {
                 ..default()
             })
             .set(AssetPlugin {
-                // watch_for_changes: ChangeWatcher::with_delay(Duration::from_millis(1000)),
+                watch_for_changes: ChangeWatcher::with_delay(Duration::from_millis(1000)),
                 ..Default::default()
+            })
+            .set(ImagePlugin {
+                default_sampler: SamplerDescriptor {
+                    address_mode_u: AddressMode::Repeat,
+                    address_mode_v: AddressMode::Repeat,
+                    address_mode_w: AddressMode::Repeat,
+                    ..Default::default()
+                },
             }),
     )
-    .insert_resource(ClearColor(Color::hsl(PRIMARY_COLOR_HUE * 360.0, 0.2, 0.2)))
+    .insert_resource(ClearColor(Color::hsl(PRIMARY_COLOR_HUE * 360.0, 0.2, 0.15)))
     .insert_resource(Score(0))
     .insert_resource(PrimaryColorHue(PRIMARY_COLOR_HUE))
+    .add_plugins(MaterialPlugin::<SunMaterial>::default())
+    .add_plugins(MaterialPlugin::<BackgroundMaterial>::default())
     .add_plugins(MuteButtonPlugin)
     .add_state::<GameState>()
     .add_systems(Startup, setup)
@@ -50,7 +69,12 @@ fn main() {
     .add_systems(OnExit(GameState::Playing), on_exit_playing)
     .add_systems(
         Update,
-        (exit_on_esc.run_if(is_desktop), interact_button, always),
+        (
+            exit_on_esc.run_if(is_desktop),
+            interact_button,
+            always,
+            spin_earth,
+        ),
     )
     .add_systems(
         Update,
@@ -95,30 +119,54 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    mut std_materials: ResMut<Assets<StandardMaterial>>,
+    mut sun_materials: ResMut<Assets<SunMaterial>>,
+    mut bg_materials: ResMut<Assets<BackgroundMaterial>>,
     asset_server: Res<AssetServer>,
 ) {
-    // music
-    commands.spawn((
-        AudioBundle {
-            source: asset_server.load("music.ogg"),
-            settings: PlaybackSettings {
-                mode: PlaybackMode::Loop,
-                volume: Volume::Relative(VolumeLevel::new(MENU_MUSIC_VOLUME)),
-                ..default()
-            },
-            ..default()
-        },
-        Music,
-    ));
+    // // music
+    // commands.spawn((
+    //     AudioBundle {
+    //         source: asset_server.load("music.ogg"),
+    //         settings: PlaybackSettings {
+    //             mode: PlaybackMode::Loop,
+    //             volume: Volume::Relative(VolumeLevel::new(MENU_MUSIC_VOLUME)),
+    //             ..default()
+    //         },
+    //         ..default()
+    //     },
+    //     Music,
+    // ));
 
     // camera
-    commands.spawn(Camera2dBundle {
-        projection: OrthographicProjection {
-            scaling_mode: ScalingMode::FixedVertical(720.0),
+    commands.spawn((
+        Camera3dBundle {
+            camera: Camera {
+                hdr: true,
+                ..default()
+            },
+            projection: Projection::Orthographic(OrthographicProjection {
+                viewport_origin: vec2(0.5, 0.5),
+                scaling_mode: ScalingMode::FixedVertical(720.0),
+                scale: 0.1,
+                ..default()
+            }),
+            transform: Transform::from_translation(Vec3::new(0.0, 0.0, 10.0))
+                .looking_at(Vec3::ZERO, Vec3::Y),
             ..default()
         },
-        ..default()
-    });
+        BloomSettings {
+            intensity: 0.3, // the default is 0.3
+            ..default()
+        },
+    ));
+    // commands.spawn(Camera2dBundle {
+    //     projection: OrthographicProjection {
+    //         scaling_mode: ScalingMode::FixedVertical(720.0),
+    //         ..default()
+    //     },
+    //     ..default()
+    // });
 
     // spawn score text
     commands.spawn((
@@ -143,6 +191,72 @@ fn setup(
     // commands.insert_resource(AssetHandle::<Circle, ColorMaterial>::new(
     //     materials.add(Color::hsl((PRIMARY_COLOR_HUE - 0.5) * 360.0, 0.7, 0.8).into()),
     // ));
+
+    // // spawn stars.png texture
+    // commands.spawn(MaterialMeshBundle {
+    //     mesh: meshes.add(shape::Plane::from_size(100.0).into()).into(),
+    //     material: std_materials.add(asset_server.load("stars.png").into()),
+    //     transform: Transform::from_translation(vec3(0.0, 0.0, -100.0))
+    //         .with_rotation(Quat::from_rotation_x(PI / 2.0)),
+    //     ..default()
+    // });
+
+    // spawn background
+    commands.spawn(MaterialMeshBundle {
+        mesh: meshes.add(shape::Plane::from_size(1000.0).into()).into(),
+        material: bg_materials.add(BackgroundMaterial {
+            color: Color::WHITE,
+            color_texture: asset_server.load("stars.png"),
+        }),
+        transform: Transform::from_translation(vec3(0.0, 0.0, -100.0))
+            .with_rotation(Quat::from_rotation_x(PI / 2.0)),
+        ..default()
+    });
+
+    // spawn sun
+    commands.spawn(MaterialMeshBundle {
+        mesh: meshes.add(shape::Plane::from_size(30.0).into()).into(),
+        material: sun_materials.add(SunMaterial {
+            color: Color::ORANGE_RED,
+            color_texture: asset_server.load("noise.png"),
+        }),
+        transform: Transform::from_translation(vec3(0.0, 15.0, 0.0))
+            .with_rotation(Quat::from_rotation_x(PI / 2.0)),
+        ..default()
+    });
+
+    // spawn point light
+    commands.spawn(PointLightBundle {
+        transform: Transform::from_translation(vec3(0.0, 15.0, 0.0)),
+        point_light: PointLight {
+            intensity: 1000000.0,
+            range: 1000.0,
+            color: Color::rgb(1.0, 0.8, 0.5),
+            ..default()
+        },
+        ..default()
+    });
+
+    // spawn earth
+    commands
+        .spawn(SceneBundle {
+            scene: asset_server.load("earth.glb#Scene0"),
+            transform: Transform::from_xyz(0.0, -25.0, -20.0)
+                .with_scale(Vec3::splat(5.0))
+                .with_rotation(Quat::from_euler(EulerRot::XYZ, 1.0, 0.0, 1.0)),
+            ..Default::default()
+        })
+        .insert(Earth);
+}
+
+#[derive(Component)]
+struct Earth;
+
+fn spin_earth(time: Res<Time>, mut q_earth: Query<&mut Transform, With<Earth>>) {
+    for mut transform in q_earth.iter_mut() {
+        transform.rotation =
+            Quat::from_rotation_x(-1.0) * Quat::from_rotation_y(time.elapsed_seconds() * 0.2);
+    }
 }
 
 fn interact_play_button(
@@ -270,3 +384,41 @@ fn while_playing(
 }
 
 fn always(time: Res<Time>, mut commands: Commands, mut next_state: ResMut<NextState<GameState>>) {}
+
+#[derive(AsBindGroup, TypeUuid, TypePath, Debug, Clone)]
+#[uuid = "f690fdae-d598-45ab-8225-97e2a3f056e9"]
+pub struct SunMaterial {
+    #[uniform(0)]
+    color: Color,
+    #[texture(1)]
+    #[sampler(2)]
+    color_texture: Handle<Image>,
+}
+impl Material for SunMaterial {
+    fn fragment_shader() -> ShaderRef {
+        "shaders/sun.wgsl".into()
+    }
+
+    fn alpha_mode(&self) -> AlphaMode {
+        AlphaMode::Blend
+    }
+}
+
+#[derive(AsBindGroup, TypeUuid, TypePath, Debug, Clone)]
+#[uuid = "f690fdae-d598-45ab-8225-97e2a3f056e8"]
+pub struct BackgroundMaterial {
+    #[uniform(0)]
+    color: Color,
+    #[texture(1)]
+    #[sampler(2)]
+    color_texture: Handle<Image>,
+}
+impl Material for BackgroundMaterial {
+    fn fragment_shader() -> ShaderRef {
+        "shaders/background.wgsl".into()
+    }
+
+    fn alpha_mode(&self) -> AlphaMode {
+        AlphaMode::Blend
+    }
+}
