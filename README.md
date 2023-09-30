@@ -35,6 +35,7 @@
 
 
 ### Wishlist
+- Master bgm
 - Cheering pikmin sound when launching
 - Juice
 - Performance

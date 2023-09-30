@@ -70,6 +70,7 @@ fn main() {
     .add_systems(Startup, setup)
     .add_systems(OnEnter(GameState::MainMenu), on_enter_menu)
     .add_systems(OnEnter(GameState::Launched), on_enter_launched)
+    .add_systems(OnEnter(GameState::ChargingLaunch), on_enter_charging)
     .add_systems(
         OnExit(GameState::MainMenu),
         (on_exit_menu, on_enter_playing),
@@ -85,6 +86,7 @@ fn main() {
             always,
             spin_earth,
             spin_debris,
+            // spin_crates,
             update_cannon_transform,
             rotate_crates,
             apply_velocity,
@@ -138,6 +140,15 @@ fn is_desktop() -> bool {
 struct Music;
 
 #[derive(Component)]
+struct ChargeSound;
+
+#[derive(Component)]
+struct FireSound;
+
+#[derive(Component)]
+struct EarthDestroyedSound;
+
+#[derive(Component)]
 struct ScoreText;
 
 fn setup(
@@ -149,19 +160,64 @@ fn setup(
     mut bg_materials: ResMut<Assets<BackgroundMaterial>>,
     asset_server: Res<AssetServer>,
 ) {
-    // // music
-    // commands.spawn((
-    //     AudioBundle {
-    //         source: asset_server.load("music.ogg"),
-    //         settings: PlaybackSettings {
-    //             mode: PlaybackMode::Loop,
-    //             volume: Volume::Relative(VolumeLevel::new(MENU_MUSIC_VOLUME)),
-    //             ..default()
-    //         },
-    //         ..default()
-    //     },
-    //     Music,
-    // ));
+    // music
+    commands.spawn((
+        AudioBundle {
+            source: asset_server.load("music.ogg"),
+            settings: PlaybackSettings {
+                mode: PlaybackMode::Loop,
+                volume: Volume::Relative(VolumeLevel::new(MENU_MUSIC_VOLUME)),
+                ..default()
+            },
+            ..default()
+        },
+        Music,
+    ));
+
+    // charge sound
+    commands.spawn((
+        AudioBundle {
+            source: asset_server.load("charge.ogg"),
+            settings: PlaybackSettings {
+                mode: PlaybackMode::Once,
+                volume: Volume::Relative(VolumeLevel::new(0.4)),
+                paused: true,
+                ..default()
+            },
+            ..default()
+        },
+        ChargeSound,
+    ));
+
+    // fire sound
+    commands.spawn((
+        AudioBundle {
+            source: asset_server.load("fired.ogg"),
+            settings: PlaybackSettings {
+                mode: PlaybackMode::Once,
+                volume: Volume::Relative(VolumeLevel::new(0.4)),
+                paused: true,
+                ..default()
+            },
+            ..default()
+        },
+        FireSound,
+    ));
+
+    // earth destroyed sound
+    commands.spawn((
+        AudioBundle {
+            source: asset_server.load("earth_destroyed.ogg"),
+            settings: PlaybackSettings {
+                mode: PlaybackMode::Once,
+                volume: Volume::Relative(VolumeLevel::new(0.4)),
+                paused: true,
+                ..default()
+            },
+            ..default()
+        },
+        EarthDestroyedSound,
+    ));
 
     // camera
     commands.spawn((
@@ -388,8 +444,16 @@ fn update_launch_power(
     launch_power.0.tick(time.delta());
 
     // if launch_power > 1.0, go to Launched
-    if launch_power.0.elapsed_secs() > 1.0 {
+    if launch_power.0.elapsed_secs() > 2.0 {
         next_state.set(GameState::Launched);
+    }
+}
+
+fn on_enter_charging(
+    charge_sound_controller: Query<&AudioSink, With<ChargeSound>>
+) {
+    for sink in charge_sound_controller.iter() {
+        sink.play();
     }
 }
 
@@ -399,7 +463,18 @@ fn on_enter_launched(
     mut current_crate: Query<(Entity, &mut Transform, &GlobalTransform), (With<CurrentCrate>, Without<Cannon>, Without<Earth>)>,
     cannon: Query<&Transform, (With<Cannon>, Without<Earth>)>,
     earth: Query<&Transform, (With<Earth>, Without<Cannon>)>,
+    charge_sound_controller: Query<&AudioSink, With<ChargeSound>>,
+    fire_sound_controller: Query<&AudioSink, With<FireSound>>,
 ) {
+    for sink in charge_sound_controller.iter() {
+        sink.pause();
+    }
+
+    for sink in fire_sound_controller.iter() {
+        sink.play();
+    }
+
+
     let (crate_ent, mut crate_transform, crate_global_transform) = current_crate.single_mut();
     let cannon_transform = cannon.single().clone();
     let earth_transform = earth.single().clone();
@@ -445,7 +520,7 @@ fn apply_gravity(
             let crate_pos = crate_transform.translation;
             let distance = sun_pos.distance(crate_pos);
             let direction = (sun_pos - crate_pos).normalize();
-            let gravity = (direction * 60.0 * mass.0) / distance.powi(2);
+            let gravity = (direction * 100.0 * mass.0) / distance.powi(2);
             velocity.0 += Vec2::new(gravity.x, gravity.y);
         }
     }
@@ -501,7 +576,7 @@ fn update_cannon_transform(
 
 fn rotate_crates(time: Res<Time>, mut q_crate: Query<&mut Transform, With<Crate>>) {
     for mut transform in q_crate.iter_mut() {
-        transform.rotate(Quat::from_rotation_z(time.delta_seconds() * 1.0));
+        transform.rotate(Quat::from_rotation_z(time.delta_seconds() * 2.0));
     }
 }
 
@@ -509,6 +584,12 @@ fn spin_earth(time: Res<Time>, mut q_earth: Query<&mut Transform, With<Earth>>) 
     for mut transform in q_earth.iter_mut() {
         transform.rotation =
             Quat::from_rotation_x(-1.0) * Quat::from_rotation_y(time.elapsed_seconds() * 0.2);
+    }
+}
+
+fn spin_crates(time: Res<Time>, mut q_crate: Query<&mut Transform, With<Crate>>) {
+    for mut transform in q_crate.iter_mut() {
+        transform.rotate(Quat::from_rotation_z(time.delta_seconds() * 1.0));
     }
 }
 
