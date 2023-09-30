@@ -20,9 +20,14 @@
 - ~~Bloom~~
 - ~~Aimable cannon around earth~~
 - ~~Click to launch~~
-- Gravity
-- "Launching" sound (like worms bazooka)
+- ~~Cannon model~~
+- ~~Gravity~~
+- Destroy crate on sun collision
+- Die if crate collides with earth
+- Create debris model
+- Spawn debris
 - Debris gets stuck to crate on collision
+- "Launching" sound (like worms bazooka)
 - Music (spacey vital synth + slow amen beat? + murmuring sun bass)
 - Test in Chrome
 - Write short story/description

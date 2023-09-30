@@ -5,7 +5,7 @@ use bevy::{
     asset::ChangeWatcher,
     audio::{PlaybackMode, Volume, VolumeLevel},
     core_pipeline::{bloom::BloomSettings, tonemapping::Tonemapping},
-    math::{vec2, vec3},
+    math::{vec2, vec3, Vec3Swizzles},
     prelude::*,
     reflect::{TypePath, TypeUuid},
     render::{
@@ -60,6 +60,7 @@ fn main() {
     .insert_resource(ClearColor(Color::hsl(PRIMARY_COLOR_HUE * 360.0, 0.2, 0.1)))
     .insert_resource(Score(0))
     .insert_resource(Level(1))
+    .insert_resource(FixedTime::new_from_secs(1.0 / 60.0))
     .insert_resource(LaunchPower(Stopwatch::new()))
     .insert_resource(PrimaryColorHue(PRIMARY_COLOR_HUE))
     .add_plugins(MaterialPlugin::<SunMaterial>::default())
@@ -75,6 +76,7 @@ fn main() {
     )
     // .add_systems(OnEnter(GameState::ReadyToLaunch), on_enter_playing)
     // .add_systems(OnExit(GameState::ReadyToLaunch), on_exit_playing)
+    .add_systems(FixedUpdate, (apply_gravity))
     .add_systems(
         Update,
         (
@@ -82,9 +84,11 @@ fn main() {
             interact_button,
             always,
             spin_earth,
+            spin_debris,
             update_cannon_transform,
             rotate_crates,
             apply_velocity,
+            // apply_gravity,
         ),
     )
     .add_systems(
@@ -170,7 +174,7 @@ fn setup(
             projection: Projection::Orthographic(OrthographicProjection {
                 viewport_origin: vec2(0.5, 0.5),
                 scaling_mode: ScalingMode::FixedVertical(720.0),
-                scale: 0.1,
+                scale: 0.12,
                 ..default()
             }),
             transform: Transform::from_translation(Vec3::new(0.0, 0.0, 10.0))
@@ -236,7 +240,7 @@ fn setup(
                 color: Color::ORANGE_RED,
                 color_texture: asset_server.load("noise.png"),
             }),
-            transform: Transform::from_translation(vec3(0.0, 15.0, 0.0))
+            transform: Transform::from_translation(vec3(0.0, 15.0, -50.0))
                 .with_rotation(Quat::from_rotation_x(PI / 2.0)),
             ..default()
         },
@@ -266,25 +270,72 @@ fn setup(
         })
         .insert(Earth);
 
+
+    // // spawn debris
+    // for x in -3..=3 {
+    //     for y in -3..=3 {
+    //         commands
+    //             .spawn((
+    //                 Debris,
+    //                 SceneBundle {
+    //                     scene: asset_server.load("debris.glb#Scene0"),
+    //                     transform: Transform::from_xyz(x as f32 * 4.0, y as f32 * 4.0, 0.0)
+    //                         .with_scale(Vec3::splat(1.0))
+    //                         .with_rotation(Quat::from_euler(EulerRot::XYZ, 1.0, 0.0, 1.0)),
+    //                     ..default()
+    //                 },
+    //             ));
+    //     }
+    // }
+
+    // spawn debris in a circle
+    let radius = 25.0;
+    let num_debris = 8;
+    for i in 0..num_debris {
+        let angle = i as f32 / num_debris as f32 * PI * 2.0;
+        let x = angle.sin() * radius;
+        let y = angle.cos() * radius;
+        commands
+            .spawn((
+                Debris,
+                SceneBundle {
+                    scene: asset_server.load("debris.glb#Scene0"),
+                    transform: Transform::from_xyz(x, y + 15.0, 0.0)
+                        .with_scale(Vec3::splat(1.0))
+                        .with_rotation(Quat::from_euler(EulerRot::XYZ, 1.0 + x, 0.0 + y * 2.0, 1.0)),
+                    ..default()
+                },
+            ));
+    }
+
     // spawn cannon + crate
     commands
         .spawn((
             Cannon,
-            SpatialBundle {
-                transform: Transform::from_translation(vec3(0.0, 0.0, 0.0)),
+            SceneBundle {
+                scene: asset_server.load("launcher.glb#Scene0"),
+                transform: Transform::from_xyz(0.0, 0.0, 0.0)
+                    // .with_scale(Vec3::splat(5.0))
+                    .with_rotation(Quat::from_euler(EulerRot::XYZ, 1.0, 0.0, 1.0))
+                    ,
                 ..default()
             },
+            // SpatialBundle {
+            //     transform: Transform::from_translation(vec3(0.0, 0.0, 0.0)),
+            //     ..default()
+            // },
         ))
         .with_children(|parent| {
             parent.spawn((
                 SceneBundle {
                     scene: asset_server.load("crate.glb#Scene0"),
-                    transform: Transform::from_xyz(0.0, 0.0, 0.0)
+                    transform: Transform::from_xyz(0.0, 3.0, 0.0)
                         .with_scale(Vec3::splat(1.0))
                         .with_rotation(Quat::from_euler(EulerRot::XYZ, 1.0, 0.0, 1.0)),
                     ..default()
                 },
                 Crate,
+                Mass(1.0),
                 CurrentCrate,
             ));
         });
@@ -292,6 +343,9 @@ fn setup(
 
 #[derive(Component)]
 struct Earth;
+
+#[derive(Component)]
+struct Debris;
 
 #[derive(Component)]
 struct Sun;
@@ -307,6 +361,9 @@ struct CurrentCrate;
 
 #[derive(Component)]
 struct Velocity(Vec2);
+
+#[derive(Component)]
+struct Mass(f32);
 
 // if in state ReadyToLaunch & LMB pressed, go to ChargingLaunch
 fn start_launching(
@@ -339,13 +396,29 @@ fn update_launch_power(
 fn on_enter_launched(
     mut commands: Commands,
     launch_power: Res<LaunchPower>,
-    current_crate: Query<Entity, With<CurrentCrate>>,
+    mut current_crate: Query<(Entity, &mut Transform, &GlobalTransform), (With<CurrentCrate>, Without<Cannon>, Without<Earth>)>,
+    cannon: Query<&Transform, (With<Cannon>, Without<Earth>)>,
+    earth: Query<&Transform, (With<Earth>, Without<Cannon>)>,
 ) {
+    let (crate_ent, mut crate_transform, crate_global_transform) = current_crate.single_mut();
+    let cannon_transform = cannon.single().clone();
+    let earth_transform = earth.single().clone();
+    let translation_diff = cannon_transform.translation - earth_transform.translation;
+    let diff_normal = translation_diff.normalize().xy();
+
     // add Velocity to current crate
     let power = launch_power.0.elapsed_secs() * 1.0;
     commands
-        .entity(current_crate.single())
-        .insert(Velocity(Vec2::new(0.0, power)));
+        .entity(crate_ent)
+        .insert(Velocity(diff_normal * power));
+
+    // add cannon translation to crate
+    crate_transform.translation = crate_global_transform.translation();
+    crate_transform.rotation = cannon_transform.rotation * crate_transform.rotation;
+
+    // move current_crate from parent to root
+    commands.entity(crate_ent).remove::<Parent>();
+
 }
 
 // if in state ChargingLaunch & LMB not pressed, go to Launched
@@ -361,9 +434,27 @@ fn launch(
     }
 }
 
-fn apply_velocity(mut q_crate: Query<(&mut Transform, &Velocity), With<Crate>>) {
+fn apply_gravity(
+    // time: Res<Time>,
+    mut q_crate: Query<(&mut Velocity, &Transform, &Mass), With<Crate>>,
+    q_sun: Query<&Transform, (With<Sun>, Without<Crate>)>,
+) {
+    for (mut velocity, crate_transform, mass) in q_crate.iter_mut() {
+        for sun_transform in q_sun.iter() {
+            let sun_pos = sun_transform.translation;
+            let crate_pos = crate_transform.translation;
+            let distance = sun_pos.distance(crate_pos);
+            let direction = (sun_pos - crate_pos).normalize();
+            let gravity = (direction * 60.0 * mass.0) / distance.powi(2);
+            velocity.0 += Vec2::new(gravity.x, gravity.y);
+        }
+    }
+}
+
+fn apply_velocity(mut q_crate: Query<(&mut Transform, &Velocity), With<Crate>>, time: Res<Time>) {
     for (mut transform, velocity) in q_crate.iter_mut() {
-        transform.translation += Vec3::new(velocity.0.x, velocity.0.y, 0.0);
+        transform.translation +=
+            Vec3::new(velocity.0.x, velocity.0.y, 0.0) * time.delta_seconds() * 50.0;
     }
 }
 
@@ -378,7 +469,7 @@ fn update_cannon_transform(
     if let Ok(mut window) = primary_window.get_single() {
         let window_width = window.width() as f32;
         let window_x_center = window_width / 2.0;
-        let max_offset = ((window_width / 2.0) * 0.75).min(180.0);
+        let max_offset = ((window_width / 2.0) * 0.75).min(160.0);
 
         if let Some(cursor) = window.cursor_position() {
             for mut transform in q_cannon.iter_mut() {
@@ -388,7 +479,7 @@ fn update_cannon_transform(
                 let x_pos = cursor_x_offset_from_center.clamp(-max_offset, max_offset);
                 let x_pos_rel = x_pos / max_offset;
                 let angle = x_pos_rel * PI / 2.0 * 0.8;
-                let radius = 8.0;
+                let radius = 6.0;
                 let x = angle.sin() * radius;
                 let y = angle.cos() * radius;
 
@@ -397,7 +488,8 @@ fn update_cannon_transform(
                 let current_translation = transform.translation;
                 let target_translation = Vec3::new(x, y, 0.0) + earth_transform.translation;
                 let current_rotation = transform.rotation;
-                let target_rotation = Quat::from_rotation_y(angle);
+                //lookat
+                let target_rotation = Quat::from_rotation_z(-angle);
                 let new_translation = current_translation.lerp(target_translation, n);
                 let new_rotation = current_rotation.lerp(target_rotation, n);
                 transform.translation = new_translation;
@@ -417,6 +509,20 @@ fn spin_earth(time: Res<Time>, mut q_earth: Query<&mut Transform, With<Earth>>) 
     for mut transform in q_earth.iter_mut() {
         transform.rotation =
             Quat::from_rotation_x(-1.0) * Quat::from_rotation_y(time.elapsed_seconds() * 0.2);
+    }
+}
+
+fn spin_debris(time: Res<Time>, mut q_debris: Query<(Entity, &mut Transform), With<Debris>>) {
+    for (entity, mut transform) in q_debris.iter_mut() {
+        let id = entity.index();
+
+        let x_spin_rate = 0.5 + (id % 10) as f32 * 0.1;
+        let y_spin_rate = 0.5 + (id % 10) as f32 * 0.1;
+        // let z_spin_rate = 1.0 + (id % 10) as f32 * 0.1;
+
+        let e = time.elapsed_seconds() * 1.0;
+        
+        transform.rotation = Quat::from_euler(EulerRot::XYZ, e * x_spin_rate, e * y_spin_rate, 0.0);
     }
 }
 
