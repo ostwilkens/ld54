@@ -16,7 +16,7 @@ var base_color_sampler: sampler;
 const PI: f32 = 3.14159265358979323846;
 const purple: vec3<f32> = vec3<f32>(0.298, 0.176, 0.459);
 const yellow: vec3<f32> = vec3<f32>(0.675, 0.635, 0.22);
-const ITS: f32 = 100.0;
+const ITS: f32 = 10.0;
 
 fn txnoise(x: vec3<f32>) -> f32 {
     let p: vec3<f32> = floor(x);
