@@ -60,7 +60,7 @@ fn main() {
     )
     .insert_resource(ClearColor(Color::hsl(PRIMARY_COLOR_HUE * 360.0, 0.2, 0.1)))
     .insert_resource(Score(0))
-    .insert_resource(Level(4))
+    .insert_resource(Level(1))
     .insert_resource(FixedTime::new_from_secs(1.0 / 60.0))
     .insert_resource(LaunchPower(Stopwatch::new()))
     .insert_resource(PrimaryColorHue(PRIMARY_COLOR_HUE))
@@ -72,16 +72,13 @@ fn main() {
     .add_systems(OnEnter(GameState::Menu), on_enter_menu)
     .add_systems(OnEnter(GameState::Launched), on_enter_launched)
     .add_systems(OnEnter(GameState::ChargingLaunch), on_enter_charging)
-    .add_systems(
-        OnExit(GameState::Menu),
-        (on_exit_menu, on_enter_playing),
-    )
+    .add_systems(OnExit(GameState::Menu), (on_exit_menu, on_enter_playing))
     .add_systems(OnEnter(GameState::ReadyToLaunch), on_enter_ready)
     // .add_systems(OnExit(GameState::ReadyToLaunch), on_exit_playing)
     .add_systems(FixedUpdate, (apply_gravity))
     .add_systems(
-        Update, 
-        (increase_crate_mass, orbit_debris).run_if(in_state(GameState::Launched))
+        Update,
+        (increase_crate_mass, orbit_debris).run_if(in_state(GameState::Launched)),
     )
     .add_systems(
         Update,
@@ -433,10 +430,7 @@ fn orbit_debris(
     }
 }
 
-fn increase_crate_mass(
-    mut q_crate: Query<&mut Mass, With<Crate>>,
-    time: Res<Time>,
-) {
+fn increase_crate_mass(mut q_crate: Query<&mut Mass, With<Crate>>, time: Res<Time>) {
     for mut mass in q_crate.iter_mut() {
         mass.0 += time.delta_seconds() * 0.35;
     }
@@ -658,39 +652,83 @@ fn update_cannon_transform(
     // mut mouse_pos: EventReader<CursorMoved>,
     primary_window: Query<&Window, With<PrimaryWindow>>,
     time: Res<Time>,
+    camera_q: Query<(&Camera, &GlobalTransform)>,
 ) {
+    let (camera, camera_transform) = camera_q.single();
+
     if let Ok(mut window) = primary_window.get_single() {
         let window_width = window.width() as f32;
         let window_x_center = window_width / 2.0;
-        let max_offset = ((window_width / 2.0) * 0.75).min(160.0);
 
         if let Some(cursor) = window.cursor_position() {
             for mut transform in q_cannon.iter_mut() {
                 let earth_transform = q_earth.single();
-
-                let cursor_x_offset_from_center = cursor.x - window_x_center;
-                let x_pos = cursor_x_offset_from_center.clamp(-max_offset, max_offset);
-                let x_pos_rel = x_pos / max_offset;
-                let angle = x_pos_rel * PI / 2.0 * 0.9;
-                let radius = 6.0;
-                let x = angle.sin() * radius;
-                let y = angle.cos() * radius;
-
-                let n = time.delta_seconds() * 16.0;
-
-                let current_translation = transform.translation;
-                let target_translation = Vec3::new(x, y, 0.0) + earth_transform.translation;
-                let current_rotation = transform.rotation;
-                //lookat
-                let target_rotation = Quat::from_rotation_z(-angle);
-                let new_translation = current_translation.lerp(target_translation, n);
-                let new_rotation = current_rotation.lerp(target_rotation, n);
-                transform.translation = new_translation;
-                transform.rotation = new_rotation;
+                if let Some(cursor_world_pos) = window
+                    .cursor_position()
+                    .and_then(|cursor| camera.viewport_to_world(camera_transform, cursor))
+                    .map(|ray| ray.origin.truncate()) {
+                        let offset = cursor_world_pos - earth_transform.translation.xy();
+                        let normal = offset.normalize();
+                        let radius = 6.0;
+                        let x = normal.x * radius;
+                        let y = normal.y * radius;
+        
+                        let n = time.delta_seconds() * 16.0;
+        
+                        let current_translation = transform.translation;
+                        let target_translation = Vec3::new(x, y, 0.0) + earth_transform.translation;
+                        let current_rotation = transform.rotation;
+                        //lookat
+                        let target_rotation = Quat::from_rotation_z(-normal.x.atan2(normal.y));
+                        let new_translation = current_translation.lerp(target_translation, n);
+                        let new_rotation = current_rotation.lerp(target_rotation, n);
+                        transform.translation = new_translation;
+                        transform.rotation = new_rotation;
+                    }
             }
         }
     }
 }
+
+// fn update_cannon_transform(
+//     mut q_cannon: Query<&mut Transform, With<Cannon>>,
+//     q_earth: Query<&Transform, (With<Earth>, Without<Cannon>)>,
+//     // mut mouse_pos: EventReader<CursorMoved>,
+//     primary_window: Query<&Window, With<PrimaryWindow>>,
+//     time: Res<Time>,
+// ) {
+//     if let Ok(mut window) = primary_window.get_single() {
+//         let window_width = window.width() as f32;
+//         let window_x_center = window_width / 2.0;
+//         let max_offset = ((window_width / 2.0) * 0.75).min(160.0);
+
+//         if let Some(cursor) = window.cursor_position() {
+//             for mut transform in q_cannon.iter_mut() {
+//                 let earth_transform = q_earth.single();
+
+//                 let cursor_x_offset_from_center = cursor.x - window_x_center;
+//                 let x_pos = cursor_x_offset_from_center.clamp(-max_offset, max_offset);
+//                 let x_pos_rel = x_pos / max_offset;
+//                 let angle = x_pos_rel * PI / 2.0 * 0.9;
+//                 let radius = 6.0;
+//                 let x = angle.sin() * radius;
+//                 let y = angle.cos() * radius;
+
+//                 let n = time.delta_seconds() * 16.0;
+
+//                 let current_translation = transform.translation;
+//                 let target_translation = Vec3::new(x, y, 0.0) + earth_transform.translation;
+//                 let current_rotation = transform.rotation;
+//                 //lookat
+//                 let target_rotation = Quat::from_rotation_z(-angle);
+//                 let new_translation = current_translation.lerp(target_translation, n);
+//                 let new_rotation = current_rotation.lerp(target_rotation, n);
+//                 transform.translation = new_translation;
+//                 transform.rotation = new_rotation;
+//             }
+//         }
+//     }
+// }
 
 fn rotate_crates(time: Res<Time>, mut q_crate: Query<&mut Transform, With<Crate>>) {
     for mut transform in q_crate.iter_mut() {
@@ -711,7 +749,10 @@ fn spin_crates(time: Res<Time>, mut q_crate: Query<&mut Transform, With<Crate>>)
     }
 }
 
-fn spin_debris(time: Res<Time>, mut q_debris: Query<(Entity, &mut Transform), (With<Debris>, Without<PickedUp>)>) {
+fn spin_debris(
+    time: Res<Time>,
+    mut q_debris: Query<(Entity, &mut Transform), (With<Debris>, Without<PickedUp>)>,
+) {
     for (entity, mut transform) in q_debris.iter_mut() {
         let id = entity.index();
 
@@ -1089,7 +1130,6 @@ fn remove_crate_on_sun_collision(
                     // enter ready to launch state
                     next_state.set(GameState::ReadyToLaunch);
                 }
-
             }
         }
     }

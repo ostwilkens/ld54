@@ -31,10 +31,14 @@
 - ~~Respawn earth~~
 - ~~Camera follows crate~~
 - ~~Debris gets stuck to crate on collision~~
+- ~~Die if crate collides with earth~~
+- ~~Turret should face towards cursor~~
+- Visual power meter
+- Self destruct crate after 10?s
+- Level tuning
 - Touch controls
 - New level / victory sound
 - Debris pickup sound (mergey splop)
-- ~~Die if crate collides with earth~~
 - Test in Chrome
 - Write short story/description
 - Give feedback to 100 games
