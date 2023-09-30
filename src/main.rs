@@ -21,6 +21,7 @@ use button::{interact_button, ButtonCommands};
 
 #[cfg(feature = "dev")]
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
+use utils::AssetHandle;
 
 mod button;
 // mod mute;
@@ -75,7 +76,7 @@ fn main() {
         OnExit(GameState::MainMenu),
         (on_exit_menu, on_enter_playing),
     )
-    // .add_systems(OnEnter(GameState::ReadyToLaunch), on_enter_playing)
+    .add_systems(OnEnter(GameState::ReadyToLaunch), on_enter_ready)
     // .add_systems(OnExit(GameState::ReadyToLaunch), on_exit_playing)
     .add_systems(FixedUpdate, (apply_gravity))
     .add_systems(
@@ -91,6 +92,9 @@ fn main() {
             rotate_crates,
             apply_velocity,
             // apply_gravity,
+            remove_crate_on_sun_collision,
+            remove_crate_on_earth_collision,
+            fade_explosions,
         ),
     )
     .add_systems(
@@ -151,6 +155,15 @@ struct EarthDestroyedSound;
 #[derive(Component)]
 struct ScoreText;
 
+#[derive(Component)]
+struct Explosion;
+
+// #[derive(Resource)]
+// struct ExplosionMesh(Option<Handle<Mesh>>);
+
+// #[derive(Resource)]
+// struct ExplosionMaterial(Option<Handle<ColorMaterial>>);
+
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -174,50 +187,50 @@ fn setup(
         Music,
     ));
 
-    // charge sound
-    commands.spawn((
-        AudioBundle {
-            source: asset_server.load("charge.ogg"),
-            settings: PlaybackSettings {
-                mode: PlaybackMode::Once,
-                volume: Volume::Relative(VolumeLevel::new(0.4)),
-                paused: true,
-                ..default()
-            },
-            ..default()
-        },
-        ChargeSound,
-    ));
+    // // charge sound
+    // commands.spawn((
+    //     AudioBundle {
+    //         source: asset_server.load("charge.ogg"),
+    //         settings: PlaybackSettings {
+    //             mode: PlaybackMode::Despawn,
+    //             volume: Volume::Relative(VolumeLevel::new(0.4)),
+    //             paused: true,
+    //             ..default()
+    //         },
+    //         ..default()
+    //     },
+    //     ChargeSound,
+    // ));
 
-    // fire sound
-    commands.spawn((
-        AudioBundle {
-            source: asset_server.load("fired.ogg"),
-            settings: PlaybackSettings {
-                mode: PlaybackMode::Once,
-                volume: Volume::Relative(VolumeLevel::new(0.4)),
-                paused: true,
-                ..default()
-            },
-            ..default()
-        },
-        FireSound,
-    ));
+    // // fire sound
+    // commands.spawn((
+    //     AudioBundle {
+    //         source: asset_server.load("fired.ogg"),
+    //         settings: PlaybackSettings {
+    //             mode: PlaybackMode::Once,
+    //             volume: Volume::Relative(VolumeLevel::new(0.4)),
+    //             paused: true,
+    //             ..default()
+    //         },
+    //         ..default()
+    //     },
+    //     FireSound,
+    // ));
 
-    // earth destroyed sound
-    commands.spawn((
-        AudioBundle {
-            source: asset_server.load("earth_destroyed.ogg"),
-            settings: PlaybackSettings {
-                mode: PlaybackMode::Once,
-                volume: Volume::Relative(VolumeLevel::new(0.4)),
-                paused: true,
-                ..default()
-            },
-            ..default()
-        },
-        EarthDestroyedSound,
-    ));
+    // // earth destroyed sound
+    // commands.spawn((
+    //     AudioBundle {
+    //         source: asset_server.load("earth_destroyed.ogg"),
+    //         settings: PlaybackSettings {
+    //             mode: PlaybackMode::Once,
+    //             volume: Volume::Relative(VolumeLevel::new(0.4)),
+    //             paused: true,
+    //             ..default()
+    //         },
+    //         ..default()
+    //     },
+    //     EarthDestroyedSound,
+    // ));
 
     // camera
     commands.spawn((
@@ -266,6 +279,18 @@ fn setup(
     // commands.insert_resource(AssetHandle::<Circle, ColorMaterial>::new(
     //     materials.add(Color::hsl((PRIMARY_COLOR_HUE - 0.5) * 360.0, 0.7, 0.8).into()),
     // ));
+
+    // explosion asset handles
+    commands.insert_resource(AssetHandle::<Explosion, Mesh>::new(
+        meshes.add(shape::Circle::new(1.0).into()).into(),
+    ));
+    commands.insert_resource(AssetHandle::<Explosion, StandardMaterial>::new(
+        std_materials.add(StandardMaterial {
+            base_color: Color::ORANGE_RED * 20.0,
+            unlit: true,
+            ..default()
+        }),
+    ));
 
     // // spawn stars.png texture
     // commands.spawn(MaterialMeshBundle {
@@ -326,6 +351,18 @@ fn setup(
         })
         .insert(Earth);
 
+    // // spawn explosion
+    // commands
+    //     .spawn((PbrBundle {
+    //         mesh: meshes.add(shape::Circle::new(5.0).into()).into(),
+    //         material: std_materials.add(StandardMaterial {
+    //             base_color: Color::ORANGE_RED * 20.0,
+    //             unlit: true,
+    //             ..default()
+    //         }),
+    //         transform: Transform::from_xyz(0.0, -25.0, 1.0),
+    //         ..default()
+    //     }, Explosion));
 
     // // spawn debris
     // for x in -3..=3 {
@@ -351,37 +388,76 @@ fn setup(
         let angle = i as f32 / num_debris as f32 * PI * 2.0;
         let x = angle.sin() * radius;
         let y = angle.cos() * radius;
-        commands
-            .spawn((
-                Debris,
-                SceneBundle {
-                    scene: asset_server.load("debris.glb#Scene0"),
-                    transform: Transform::from_xyz(x, y + 15.0, 0.0)
-                        .with_scale(Vec3::splat(1.0))
-                        .with_rotation(Quat::from_euler(EulerRot::XYZ, 1.0 + x, 0.0 + y * 2.0, 1.0)),
-                    ..default()
-                },
-            ));
+        commands.spawn((
+            Debris,
+            SceneBundle {
+                scene: asset_server.load("debris.glb#Scene0"),
+                transform: Transform::from_xyz(x, y + 15.0, 0.0)
+                    .with_scale(Vec3::splat(1.0))
+                    .with_rotation(Quat::from_euler(EulerRot::XYZ, 1.0 + x, 0.0 + y * 2.0, 1.0)),
+                ..default()
+            },
+        ));
     }
 
     // spawn cannon + crate
-    commands
-        .spawn((
-            Cannon,
-            SceneBundle {
-                scene: asset_server.load("launcher.glb#Scene0"),
-                transform: Transform::from_xyz(0.0, 0.0, 0.0)
-                    // .with_scale(Vec3::splat(5.0))
-                    .with_rotation(Quat::from_euler(EulerRot::XYZ, 1.0, 0.0, 1.0))
-                    ,
-                ..default()
-            },
-            // SpatialBundle {
-            //     transform: Transform::from_translation(vec3(0.0, 0.0, 0.0)),
-            //     ..default()
-            // },
-        ))
-        .with_children(|parent| {
+    commands.spawn((
+        Cannon,
+        SceneBundle {
+            scene: asset_server.load("launcher.glb#Scene0"),
+            transform: Transform::from_xyz(0.0, 0.0, 0.0)
+                // .with_scale(Vec3::splat(5.0))
+                .with_rotation(Quat::from_euler(EulerRot::XYZ, 1.0, 0.0, 1.0)),
+            ..default()
+        },
+        // SpatialBundle {
+        //     transform: Transform::from_translation(vec3(0.0, 0.0, 0.0)),
+        //     ..default()
+        // },
+    ));
+    // .with_children(|parent| {
+    //     parent.spawn((
+    //         SceneBundle {
+    //             scene: asset_server.load("crate.glb#Scene0"),
+    //             transform: Transform::from_xyz(0.0, 3.0, 0.0)
+    //                 .with_scale(Vec3::splat(1.0))
+    //                 .with_rotation(Quat::from_euler(EulerRot::XYZ, 1.0, 0.0, 1.0)),
+    //             ..default()
+    //         },
+    //         Crate,
+    //         Mass(1.0),
+    //         CurrentCrate,
+    //     ));
+    // });
+}
+
+// scale down explosions in size, and remove when small enough
+fn fade_explosions(
+    time: Res<Time>,
+    mut commands: Commands,
+    mut q_explosion: Query<(Entity, &mut Transform), With<Explosion>>,
+) {
+    for (ent, mut transform) in q_explosion.iter_mut() {
+        let scale = transform.scale;
+
+        let n = time.delta_seconds() * 2.0;
+        let new_scale = scale.lerp(Vec3::ZERO, n);
+
+        transform.scale = new_scale;
+        if new_scale.x < 0.01 {
+            commands.entity(ent).despawn_recursive();
+        }
+    }
+}
+
+fn on_enter_ready(
+    mut commands: Commands,
+    q_cannon: Query<Entity, With<Cannon>>,
+    asset_server: Res<AssetServer>,
+) {
+    // spawn currentcrate in cannon
+    for cannon_ent in q_cannon.iter() {
+        commands.entity(cannon_ent).with_children(|parent| {
             parent.spawn((
                 SceneBundle {
                     scene: asset_server.load("crate.glb#Scene0"),
@@ -395,6 +471,7 @@ fn setup(
                 CurrentCrate,
             ));
         });
+    }
 }
 
 #[derive(Component)]
@@ -449,31 +526,52 @@ fn update_launch_power(
     }
 }
 
-fn on_enter_charging(
-    charge_sound_controller: Query<&AudioSink, With<ChargeSound>>
-) {
-    for sink in charge_sound_controller.iter() {
-        sink.play();
-    }
+fn on_enter_charging(mut commands: Commands, asset_server: Res<AssetServer>) {
+    commands.spawn((
+        AudioBundle {
+            source: asset_server.load("charge.ogg"),
+            settings: PlaybackSettings {
+                mode: PlaybackMode::Despawn,
+                volume: Volume::Relative(VolumeLevel::new(0.4)),
+                paused: false,
+                ..default()
+            },
+            ..default()
+        },
+        ChargeSound,
+    ));
 }
 
 fn on_enter_launched(
+    asset_server: Res<AssetServer>,
     mut commands: Commands,
     launch_power: Res<LaunchPower>,
-    mut current_crate: Query<(Entity, &mut Transform, &GlobalTransform), (With<CurrentCrate>, Without<Cannon>, Without<Earth>)>,
+    mut current_crate: Query<
+        (Entity, &mut Transform, &GlobalTransform),
+        (With<CurrentCrate>, Without<Cannon>, Without<Earth>),
+    >,
     cannon: Query<&Transform, (With<Cannon>, Without<Earth>)>,
     earth: Query<&Transform, (With<Earth>, Without<Cannon>)>,
-    charge_sound_controller: Query<&AudioSink, With<ChargeSound>>,
-    fire_sound_controller: Query<&AudioSink, With<FireSound>>,
+    charge_sound_controller: Query<(Entity, &AudioSink), With<ChargeSound>>,
 ) {
-    for sink in charge_sound_controller.iter() {
-        sink.pause();
+    for (ent, sink) in charge_sound_controller.iter() {
+        sink.stop();
+        commands.entity(ent).despawn_recursive();
     }
 
-    for sink in fire_sound_controller.iter() {
-        sink.play();
-    }
-
+    commands.spawn((
+        AudioBundle {
+            source: asset_server.load("fired.ogg"),
+            settings: PlaybackSettings {
+                mode: PlaybackMode::Despawn,
+                volume: Volume::Relative(VolumeLevel::new(0.4)),
+                paused: false,
+                ..default()
+            },
+            ..default()
+        },
+        FireSound,
+    ));
 
     let (crate_ent, mut crate_transform, crate_global_transform) = current_crate.single_mut();
     let cannon_transform = cannon.single().clone();
@@ -493,7 +591,6 @@ fn on_enter_launched(
 
     // move current_crate from parent to root
     commands.entity(crate_ent).remove::<Parent>();
-
 }
 
 // if in state ChargingLaunch & LMB not pressed, go to Launched
@@ -513,6 +610,7 @@ fn apply_gravity(
     // time: Res<Time>,
     mut q_crate: Query<(&mut Velocity, &Transform, &Mass), With<Crate>>,
     q_sun: Query<&Transform, (With<Sun>, Without<Crate>)>,
+    q_earth: Query<&Transform, (With<Earth>, Without<Cannon>, Without<Sun>)>,
 ) {
     for (mut velocity, crate_transform, mass) in q_crate.iter_mut() {
         for sun_transform in q_sun.iter() {
@@ -523,13 +621,22 @@ fn apply_gravity(
             let gravity = (direction * 100.0 * mass.0) / distance.powi(2);
             velocity.0 += Vec2::new(gravity.x, gravity.y);
         }
+
+        for earth_transform in q_earth.iter() {
+            let sun_pos = earth_transform.translation;
+            let crate_pos = crate_transform.translation;
+            let distance = sun_pos.distance(crate_pos);
+            let direction = (sun_pos - crate_pos).normalize();
+            let gravity = (direction * 10.0 * mass.0) / distance.powi(2);
+            velocity.0 += Vec2::new(gravity.x, gravity.y);
+        }
     }
 }
 
-fn apply_velocity(mut q_crate: Query<(&mut Transform, &Velocity), With<Crate>>, time: Res<Time>) {
+fn apply_velocity(mut q_crate: Query<(&mut Transform, &Velocity)>, time: Res<Time>) {
     for (mut transform, velocity) in q_crate.iter_mut() {
         transform.translation +=
-            Vec3::new(velocity.0.x, velocity.0.y, 0.0) * time.delta_seconds() * 50.0;
+            Vec3::new(velocity.0.x, velocity.0.y, 0.0) * time.delta_seconds() * 20.0;
     }
 }
 
@@ -602,7 +709,7 @@ fn spin_debris(time: Res<Time>, mut q_debris: Query<(Entity, &mut Transform), Wi
         // let z_spin_rate = 1.0 + (id % 10) as f32 * 0.1;
 
         let e = time.elapsed_seconds() * 1.0;
-        
+
         transform.rotation = Quat::from_euler(EulerRot::XYZ, e * x_spin_rate, e * y_spin_rate, 0.0);
     }
 }
@@ -725,6 +832,142 @@ fn update_music_speed(
         let n = time.delta_seconds() * 8.0;
         let new_speed = current_speed * (1.0 - n) + target_speed * n;
         sink.set_speed(new_speed.clamp(0.0, 5.0));
+    }
+}
+
+fn remove_crate_on_earth_collision(
+    asset_server: Res<AssetServer>,
+    mut commands: Commands,
+    mut score: ResMut<Score>,
+    mut q_crate: Query<(Entity, &Transform), With<Crate>>,
+    q_earth: Query<(Entity, &Transform), With<Earth>>,
+    mut next_state: ResMut<NextState<GameState>>,
+    explosion_mesh: Res<AssetHandle<Explosion, Mesh>>,
+    explosion_mtl: Res<AssetHandle<Explosion, StandardMaterial>>,
+) {
+    for (crate_ent, crate_transform) in q_crate.iter_mut() {
+        for (earth_ent, earth_transform) in q_earth.iter() {
+            let earth_pos = earth_transform.translation.xy();
+            let crate_pos = crate_transform.translation.xy();
+            let distance = earth_pos.distance(crate_pos);
+            if distance < 5.0 {
+                // remove crate
+                commands.entity(crate_ent).despawn_recursive();
+
+                // reset score
+                score.0 = 0;
+
+                // play earth destroyed sound
+                commands.spawn((
+                    AudioBundle {
+                        source: asset_server.load("earth_destroyed.ogg"),
+                        settings: PlaybackSettings {
+                            mode: PlaybackMode::Despawn,
+                            volume: Volume::Relative(VolumeLevel::new(0.5)),
+                            paused: false,
+                            ..default()
+                        },
+                        ..default()
+                    },
+                    EarthDestroyedSound,
+                ));
+
+                // spawn explosion
+                commands.spawn((
+                    PbrBundle {
+                        mesh: explosion_mesh.handle.clone().into(),
+                        material: explosion_mtl.handle.clone().into(),
+                        transform: Transform::from_xyz(earth_pos.x, earth_pos.y, 1.0)
+                            .with_scale(Vec3::splat(6.0)),
+                        ..default()
+                    },
+                    Explosion,
+                ));
+
+                for _ in 0..25 {
+                    commands.spawn((
+                        PbrBundle {
+                            mesh: explosion_mesh.handle.clone().into(),
+                            material: explosion_mtl.handle.clone().into(),
+                            transform: Transform::from_xyz(
+                                earth_pos.x,
+                                earth_pos.y,
+                                1.0,
+                            )
+                            .with_scale(Vec3::splat(rand::random::<f32>())),
+                            ..default()
+                        },
+                        Explosion,
+                        Velocity(vec2(
+                            rand::random::<f32>() - 0.5,
+                            rand::random::<f32>() - 0.5,
+                        )),
+                    ));
+                }
+
+                // hide earth
+                commands.entity(earth_ent).insert(Visibility::Hidden);
+
+                // enter ready to launch state
+                next_state.set(GameState::MainMenu);
+            }
+        }
+    }
+}
+
+fn remove_crate_on_sun_collision(
+    asset_server: Res<AssetServer>,
+    mut commands: Commands,
+    mut score: ResMut<Score>,
+    mut q_crate: Query<(Entity, &Transform), With<Crate>>,
+    q_sun: Query<&Transform, With<Sun>>,
+    mut next_state: ResMut<NextState<GameState>>,
+    explosion_mesh: Res<AssetHandle<Explosion, Mesh>>,
+    explosion_mtl: Res<AssetHandle<Explosion, StandardMaterial>>,
+) {
+    for (crate_ent, crate_transform) in q_crate.iter_mut() {
+        for sun_transform in q_sun.iter() {
+            let sun_pos = sun_transform.translation.xy();
+            let crate_pos = crate_transform.translation.xy();
+            let distance = sun_pos.distance(crate_pos);
+            if distance < 12.0 {
+                // remove crate
+                commands.entity(crate_ent).despawn_recursive();
+
+                // increase score
+                score.0 += 1;
+
+                // play earth destroyed sound
+                commands.spawn((
+                    AudioBundle {
+                        source: asset_server.load("earth_destroyed.ogg"),
+                        settings: PlaybackSettings {
+                            mode: PlaybackMode::Despawn,
+                            volume: Volume::Relative(VolumeLevel::new(0.4)),
+                            paused: false,
+                            ..default()
+                        },
+                        ..default()
+                    },
+                    EarthDestroyedSound,
+                ));
+
+                // spawn explosion
+                commands.spawn((
+                    PbrBundle {
+                        mesh: explosion_mesh.handle.clone().into(),
+                        material: explosion_mtl.handle.clone().into(),
+                        transform: Transform::from_xyz(crate_pos.x, crate_pos.y, 1.0)
+                            .with_scale(Vec3::splat(2.0)),
+                        ..default()
+                    },
+                    Explosion,
+                ));
+
+                // enter ready to launch state
+                next_state.set(GameState::ReadyToLaunch);
+            }
+        }
     }
 }
 

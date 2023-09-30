@@ -22,19 +22,21 @@
 - ~~Click to launch~~
 - ~~Cannon model~~
 - ~~Gravity~~
-- Destroy crate on sun collision
-- Die if crate collides with earth
 - ~~Create debris model~~
-- Spawn debris
-- Debris gets stuck to crate on collision
 - ~~"Launching" sound (like worms bazooka)~~
 - ~~Music (spacey vital synth + slow amen beat? + murmuring sun bass)~~
+- ~~Spawn debris~~
+- Destroy crate on sun collision
+- Debris gets stuck to crate on collision
+- Die if crate collides with earth
+
 - Test in Chrome
 - Write short story/description
 - Give feedback to 100 games
 
 
 ### Wishlist
+- Logo 
 - Master bgm
 - Cheering pikmin sound when launching
 - Juice
