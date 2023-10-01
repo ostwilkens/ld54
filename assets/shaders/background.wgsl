@@ -93,7 +93,7 @@ fn fragment(in: MeshVertexOutput) -> @location(0) vec4<f32> {
     var c: vec3<f32> = vec3<f32>(1.0);
     var a: f32 = 0.0;
 
-    let n = globals.time * 1.5;
+    let n = globals.time * 1.8;
 
     // a += txnoise(p * 1000.0 + vec3(0.0, n * 1.0, 0.0));
     // a += step(0.35, txnoise(p * 4000.0 + vec3(0.0, n * 2.0, 0.0))) * 0.2;
