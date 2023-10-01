@@ -1215,10 +1215,10 @@ fn on_enter_playing(
     q_info_text: Query<Entity, With<InfoText>>,
     q_instruction_text: Query<Entity, With<InstructionText>>,
 ) {
-    // // despawn InfoText
-    // for ent in q_info_text.iter() {
-    //     commands.entity(ent).despawn_recursive();
-    // }
+    // despawn InfoText
+    for ent in q_info_text.iter() {
+        commands.entity(ent).despawn_recursive();
+    }
 
     // // if level > 2, hide instruction text
     // if level.0 > 2 {

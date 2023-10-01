@@ -64,9 +64,9 @@
 - ~~Write short story/description~~
 - ~~Test MacOS native~~
 - ~~Test Windows native~~
-- ~~Cover image (640x512)~~~
-- Publish
-- Tweet
+- ~~Cover image 640x512~~
+- ~~Publish~~
+- ~~Tweet~~
 - Give feedback to 100 games
 
 
