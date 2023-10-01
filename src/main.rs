@@ -61,7 +61,7 @@ fn main() {
     )
     .insert_resource(ClearColor(Color::hsl(PRIMARY_COLOR_HUE * 360.0, 0.2, 0.1)))
     .insert_resource(Score(0))
-    .insert_resource(Level(3))
+    .insert_resource(Level(5))
     .insert_resource(FixedTime::new_from_secs(1.0 / 60.0))
     .insert_resource(LaunchPower(Stopwatch::new()))
     .insert_resource(PrimaryColorHue(PRIMARY_COLOR_HUE))
@@ -86,6 +86,7 @@ fn main() {
             spawn_crate_trail,
             orbit_debris,
             remove_crate_on_sun_collision,
+            remove_crate_on_mercury_collision,
         )
             .run_if(in_state(GameState::Launched)),
     )
@@ -104,10 +105,12 @@ fn main() {
             // apply_gravity,
             // remove_crate_on_sun_collision,
             remove_crate_on_earth_collision,
+            
             fade_explosions,
             update_camera_position,
             attach_debris_to_crate_collision,
-            update_music_speed,
+            update_scream_speed,
+            orbit_mercury,
         ),
     )
     .add_systems(
@@ -445,6 +448,17 @@ fn setup(
         })
         .insert(Earth);
 
+    // spawn mercury
+    commands
+        .spawn(SceneBundle {
+            scene: asset_server.load("mercury.glb#Scene0"),
+            transform: Transform::from_xyz(0.0, -10.0, -20.0)
+                .with_scale(Vec3::splat(3.0))
+                .with_rotation(Quat::from_euler(EulerRot::XYZ, 1.0, 0.0, 1.0)),
+            ..Default::default()
+        })
+        .insert(Mercury);
+
     // // spawn explosion
     // commands
     //     .spawn((PbrBundle {
@@ -494,6 +508,45 @@ struct SlorpSound;
 
 #[derive(Component)]
 struct SuccessSound;
+
+// mercury orbit the sun
+fn orbit_mercury(
+    time: Res<Time>,
+    mut q_mercury: Query<&mut Transform, (With<Mercury>, Without<Sun>)>,
+    q_sun: Query<&Transform, (With<Sun>, Without<Debris>)>,
+    level: Res<Level>,
+) {
+    // let speed = ((level.0 as f32 - 3.0).max(0.0) * 0.1).min(0.3);
+    let speed = 0.5;
+    let mut radius = 23.0 + (time.elapsed_seconds() * 0.41 + 1.0).sin() * 8.0;
+    if level.0 < 5 {
+        radius = 200.0;
+    }
+
+    for mut mercury_transform in q_mercury.iter_mut() {
+        if let Ok(sun_transform) = q_sun.get_single() {
+            let sun_pos = sun_transform.translation.xy();
+            let mercury_pos = mercury_transform.translation.xy();
+            // let distance = sun_pos.distance(mercury_pos);
+            let direction = (sun_pos - mercury_pos).normalize();
+            let direction_angle = direction.y.atan2(direction.x);
+            let distance = radius;
+
+            // move position along direction_angle
+            let new_direction_angle = direction_angle + time.delta_seconds() * speed;
+            let new_direction = Vec2::new(new_direction_angle.cos(), new_direction_angle.sin());
+            let new_position = sun_pos - new_direction * distance;
+            mercury_transform.translation = vec3(new_position.x, new_position.y, 0.0);
+
+            mercury_transform.rotation = Quat::from_euler(
+                EulerRot::XYZ,
+                0.7,
+                time.elapsed_seconds() * 0.2,
+                time.elapsed_seconds(),
+            );
+        }
+    }
+}
 
 // debris orbit the sun
 fn orbit_debris(
@@ -600,12 +653,12 @@ fn on_enter_ready(
         "Aerosol cans",
         "Razor blades",
         "Poor fella",
+        "Poor fella",
+        "Poor fella",
         "Dead memes",
         "Old phones",
-        "Tiktokkers",
         "Broken eggs",
         "My mental health",
-        "Telemarketers",
     ];
 
     let random_string = crate_strings
@@ -636,7 +689,13 @@ fn on_enter_ready(
 struct Earth;
 
 #[derive(Component)]
+struct Mercury;
+
+#[derive(Component)]
 struct Debris;
+
+#[derive(Component)]
+struct OriginalTransform(Transform);
 
 #[derive(Component)]
 struct Sun;
@@ -782,8 +841,9 @@ fn launch(
 fn apply_gravity(
     // time: Res<Time>,
     mut q_crate: Query<(&mut Velocity, &Transform, &Mass), With<Crate>>,
-    q_sun: Query<&Transform, (With<Sun>, Without<Crate>)>,
-    q_earth: Query<&Transform, (With<Earth>, Without<Cannon>, Without<Sun>)>,
+    q_sun: Query<&Transform, (With<Sun>, Without<Crate>, Without<Mercury>)>,
+    q_earth: Query<&Transform, (With<Earth>, Without<Cannon>, Without<Sun>, Without<Mercury>)>,
+    q_mercury: Query<&Transform, (With<Mercury>, Without<Cannon>, Without<Sun>, Without<Earth>)>,
 ) {
     for (mut velocity, crate_transform, mass) in q_crate.iter_mut() {
         for sun_transform in q_sun.iter() {
@@ -800,7 +860,16 @@ fn apply_gravity(
             let crate_pos = crate_transform.translation;
             let distance = sun_pos.distance(crate_pos);
             let direction = (sun_pos - crate_pos).normalize();
-            let gravity = (direction * 2.3 * mass.0) / distance.powi(2);
+            let gravity = (direction * 3.0 * mass.0) / distance.powi(2);
+            velocity.0 += Vec2::new(gravity.x, gravity.y);
+        }
+
+        for mercury_transform in q_mercury.iter() {
+            let sun_pos = mercury_transform.translation;
+            let crate_pos = crate_transform.translation;
+            let distance = sun_pos.distance(crate_pos);
+            let direction = (sun_pos - crate_pos).normalize();
+            let gravity = (direction * 3.0 * mass.0) / distance.powi(2);
             velocity.0 += Vec2::new(gravity.x, gravity.y);
         }
     }
@@ -954,7 +1023,10 @@ fn spin_debris(
 fn interact_play_button(
     mut q_button: Query<(&Interaction, &mut Style), (Changed<Interaction>, With<PlayButton>)>,
     mut next_state: ResMut<NextState<GameState>>,
-    mut q_instruction_text: Query<(Entity, &mut Style, &mut Text), (With<InstructionText>, Without<PlayButton>)>
+    mut q_instruction_text: Query<
+        (Entity, &mut Style, &mut Text),
+        (With<InstructionText>, Without<PlayButton>),
+    >,
 ) {
     if let Some((interaction, mut style)) = q_button.iter_mut().next() {
         match interaction {
@@ -986,7 +1058,10 @@ fn on_enter_menu(
     mut commands: Commands,
     music_controller: Query<&AudioSink, With<Music>>,
     mut q_score_text: Query<(Entity, &mut Style, &mut Text), With<ScoreText>>,
-    mut q_instruction_text: Query<(Entity, &mut Style, &mut Text), (With<InstructionText>, Without<ScoreText>)>,
+    mut q_instruction_text: Query<
+        (Entity, &mut Style, &mut Text),
+        (With<InstructionText>, Without<ScoreText>),
+    >,
     level: Res<Level>,
 ) {
     // set music volume
@@ -1030,7 +1105,8 @@ fn on_enter_playing(
     mut score: ResMut<Score>,
     mut q_score_text: Query<&mut Style, With<ScoreText>>,
     music_controller: Query<&AudioSink, With<Music>>,
-    q_earth: Query<Entity, With<Earth>>,
+    q_earth: Query<Entity, (With<Earth>, Without<Mercury>)>,
+    q_mercury: Query<Entity, (With<Mercury>, Without<Earth>)>,
     // circle_mesh: Res<AssetHandle<Circle, Mesh>>,
     // circle_mat: Res<AssetHandle<Circle, ColorMaterial>>,
     debris_scene: Res<AssetHandle<Debris, Scene>>,
@@ -1044,7 +1120,6 @@ fn on_enter_playing(
     // for mut style in q_score_text.iter_mut() {
     //     style.display = Display::None;
     // }
-    
 
     // start stopwatch
     commands.insert_resource(GameTime(Stopwatch::new()));
@@ -1071,6 +1146,11 @@ fn on_enter_playing(
     // ensure Visibility::Visible on earth
     for earth_ent in q_earth.iter() {
         commands.entity(earth_ent).insert(Visibility::Visible);
+    }
+
+    // ensure Visibility::Visible on mercury
+    for mercury_ent in q_mercury.iter() {
+        commands.entity(mercury_ent).insert(Visibility::Visible);
     }
 
     // despawn all existing debris
@@ -1102,13 +1182,17 @@ fn on_enter_playing(
         angle *= 1.0 + level.0 as f32 * 0.38;
         let x = angle.sin() * radius + (i as f32 * 12.5 + 1.0).sin() * 5.0;
         let y = angle.cos() * radius + (i as f32 * 48.3 + 4.0).sin() * 5.0;
+
+        let transform = Transform::from_xyz(x, y + 15.0, 0.0)
+            .with_scale(Vec3::splat(2.0))
+            .with_rotation(Quat::from_euler(EulerRot::XYZ, 1.0 + x, 0.0 + y * 2.0, 0.0));
+
         commands.spawn((
+            OriginalTransform(transform.clone()),
             Debris,
             SceneBundle {
                 scene: debris_scene.handle.clone(),
-                transform: Transform::from_xyz(x, y + 15.0, 0.0)
-                    .with_scale(Vec3::splat(2.0))
-                    .with_rotation(Quat::from_euler(EulerRot::XYZ, 1.0 + x, 0.0 + y * 2.0, 0.0)),
+                transform: transform,
                 ..default()
             },
             // Velocity(vec2(rand::random::<f32>() - 0.5, rand::random::<f32>() - 0.5)),
@@ -1139,11 +1223,12 @@ fn exit_on_esc(keyboard_input: ResMut<Input<KeyCode>>, mut exit: EventWriter<App
     }
 }
 
-fn update_music_speed(
+fn update_scream_speed(
     // music_controller: Query<&AudioSink, With<Music>>,
     // sw: Option<Res<GameTime>>,
     time: Res<Time>,
     q_current_crate: Query<(&Transform, &Velocity, &Crate), With<CurrentCrate>>,
+    q_sun: Query<&Transform, (With<Sun>, Without<Crate>)>,
     whining_controller: Query<&AudioSink, With<WhiningSound>>,
 ) {
     if let Ok(whining_sink) = whining_controller.get_single() {
@@ -1154,15 +1239,19 @@ fn update_music_speed(
         let mut target_speed = 0.1;
 
         if let Ok((crate_transform, crate_velocity, crate_str)) = q_current_crate.get_single() {
-            let crate_pos = crate_transform.translation.xy();
-            let crate_speed = crate_velocity.0.length();
-            let is_poor_fella = crate_str.0 == "Poor fella"
-                || crate_str.0 == "Tiktokkers"
-                || crate_str.0 == "Telemarketers";
+            if let Ok(sun_transform) = q_sun.get_single() {
+                let crate_pos = crate_transform.translation.xy();
+                let sun_pos = sun_transform.translation.xy();
+                let sun_distance = crate_pos.distance(sun_pos); // ranges from 15 to 30
+                let sun_closeness = (1.0 - (sun_distance - 15.0) / 15.0).clamp(0.0, 1.0); // ranges from 0 to 1
 
-            if is_poor_fella {
-                target_volume = 0.1 + (crate_speed * 0.25);
-                target_speed = 1.0 + (crate_speed * 0.1);
+                let crate_speed = crate_velocity.0.length();
+                let is_poor_fella = crate_str.0 == "Poor fella";
+
+                if is_poor_fella {
+                    target_volume = 0.1 + (crate_speed * 0.1) + sun_closeness * 0.8;
+                    target_speed = 0.8 + (crate_speed * 0.1) + sun_closeness * 0.2;
+                }
             }
         }
 
@@ -1326,6 +1415,137 @@ fn remove_crate_on_earth_collision(
 
                 // enter ready to launch state
                 next_state.set(GameState::Menu);
+            }
+        }
+    }
+}
+
+fn remove_crate_on_mercury_collision(
+    asset_server: Res<AssetServer>,
+    mut commands: Commands,
+    mut score: ResMut<Score>,
+    mut q_crate: Query<(Entity, &Crate, &Transform, &Children), With<Crate>>,
+    q_picked_up_debris: Query<(Entity, &OriginalTransform), (With<Debris>, With<PickedUp>)>,
+    q_mercury: Query<(Entity, &Transform), With<Mercury>>,
+    mut next_state: ResMut<NextState<GameState>>,
+    explosion_mesh: Res<AssetHandle<Explosion, Mesh>>,
+    explosion_mtl: Res<AssetHandle<Explosion, StandardMaterial>>,
+    mut camera_shake: ResMut<CameraShake>,
+    mut kill_log: ResMut<KillLog>,
+    mut q_kill_text: Query<(Entity, &mut Style, &mut Text), With<KillLogText>>,
+    // q_meshes: Query<(Entity, &Parent), With<World>>,
+    debris_scene: Res<AssetHandle<Debris, Scene>>,
+) {
+    for (crate_ent, crate_str, crate_transform, crate_children) in q_crate.iter_mut() {
+        for (mercury_ent, mercury_transform) in q_mercury.iter() {
+            let mercury_pos = mercury_transform.translation.xy();
+            let crate_pos = crate_transform.translation.xy();
+            let distance = mercury_pos.distance(crate_pos);
+            if distance < 3.2 {
+                // add camera shake
+                camera_shake.0 = 3.0;
+
+                // add crate to kill log
+                kill_log.0.push(crate_str.0.clone());
+                // kill_log.0.push("Planet Mercury".to_string());
+
+                // update kill log text
+                for (ent, mut style, mut text) in q_kill_text.iter_mut() {
+                    // set visible
+                    style.display = Display::Flex;
+
+                    let kill_log_last_five: Vec<String> =
+                        kill_log.0.iter().rev().take(5).rev().cloned().collect();
+
+                    for section in text.sections.iter_mut() {
+                        section.value =
+                            format!("Incineration log:\n{}", kill_log_last_five.join("\n"));
+                    }
+                }
+
+                // deparent debris and move to OriginalTransform
+                for (debris_ent, original_transform) in q_picked_up_debris.iter() {
+                    
+                    // commands.entity(debris_ent).remove::<Parent>();
+                    // commands.entity(debris_ent).remove::<PickedUp>();
+                    // commands.entity(debris_ent).insert(original_transform.0.clone());
+                }
+
+                // respawn pickedup debris
+                for (debris_ent, original_transform) in q_picked_up_debris.iter() {
+                    commands.spawn((
+                        OriginalTransform(original_transform.0.clone()),
+                        Debris,
+                        SceneBundle {
+                            scene: debris_scene.handle.clone(),
+                            transform: original_transform.0,
+                            ..default()
+                        },
+                        // Velocity(vec2(rand::random::<f32>() - 0.5, rand::random::<f32>() - 0.5)),
+                    ));
+                }
+
+                // // despawn crate
+                // for child in crate_children.iter() {
+                //     q_meshes
+                //         .get(*child)
+                //         .ok()
+                //         .map(|(mesh_ent, _)| commands.entity(mesh_ent).despawn_recursive());
+                // }
+
+                commands.entity(crate_ent).despawn_recursive();
+
+                // reset score
+                score.0 = 0;
+
+                // play earth destroyed sound
+                commands.spawn((
+                    AudioBundle {
+                        source: asset_server.load("earth_destroyed.ogg"),
+                        settings: PlaybackSettings {
+                            mode: PlaybackMode::Despawn,
+                            volume: Volume::Relative(VolumeLevel::new(0.5)),
+                            paused: false,
+                            ..default()
+                        },
+                        ..default()
+                    },
+                    EarthDestroyedSound,
+                ));
+
+                // spawn explosion
+                commands.spawn((
+                    PbrBundle {
+                        mesh: explosion_mesh.handle.clone().into(),
+                        material: explosion_mtl.handle.clone().into(),
+                        transform: Transform::from_xyz(mercury_pos.x, mercury_pos.y, 1.0)
+                            .with_scale(Vec3::splat(7.0)),
+                        ..default()
+                    },
+                    Explosion,
+                ));
+                for _ in 0..25 {
+                    commands.spawn((
+                        PbrBundle {
+                            mesh: explosion_mesh.handle.clone().into(),
+                            material: explosion_mtl.handle.clone().into(),
+                            transform: Transform::from_xyz(mercury_pos.x, mercury_pos.y, 1.0)
+                                .with_scale(Vec3::splat(rand::random::<f32>())),
+                            ..default()
+                        },
+                        Explosion,
+                        Velocity(vec2(
+                            rand::random::<f32>() - 0.5,
+                            rand::random::<f32>() - 0.5,
+                        )),
+                    ));
+                }
+
+                // // hide mercury
+                // commands.entity(mercury_ent).insert(Visibility::Hidden);
+
+                // enter ready to launch state
+                next_state.set(GameState::ReadyToLaunch);
             }
         }
     }

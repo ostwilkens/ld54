@@ -93,7 +93,7 @@ fn fragment(in: MeshVertexOutput) -> @location(0) vec4<f32> {
     var c: vec3<f32> = vec3<f32>(1.0);
     var a: f32 = 0.0;
 
-    let n = globals.time * 1.8;
+    let n = globals.time * 2.5;
 
     // a += txnoise(p * 1000.0 + vec3(0.0, n * 1.0, 0.0));
     // a += step(0.35, txnoise(p * 4000.0 + vec3(0.0, n * 2.0, 0.0))) * 0.2;
@@ -103,6 +103,25 @@ fn fragment(in: MeshVertexOutput) -> @location(0) vec4<f32> {
     // a += min(1.0, max(0.0, (txnoise(p * 4000.0 + vec3(-n * 2.0, 0.0, 0.0)) - 0.3) * 4.0));
     // a += min(1.0, max(0.0, (txnoise(p * 2000.0 + vec3(-n * 4.0, 0.0, 0.0)) - 0.4) * 100.0));
 
+    // a += min(1.0, max(0.0, (txnoise(p * 100.0 + vec3(0.0, n * 4.0, 0.0)) - 0.2) * 100.0));
+
+    // let ambient = sin(globals.time * 0.4) * 0.5;
+    let ambient = sin(p.x);
+    a += ambient * 0.1;
+
+    var gp = p;
+    let gw = min(1.0, max(0.0, (globals.time * 0.2 - 2.0)));
+    // gp.y += sin(gp.y * 15.0) * 0.5;
+    var galaxy_gradient = 0.0;
+    galaxy_gradient += sin(gp.y * 35.0 + gp.x * 5.0 + 4.0 + globals.time * 0.3 + sin(gp.y * 10.0)) - 0.3;
+    galaxy_gradient -= sin(gp.x * 20.0 + gp.y * 100.0) - 1.0;
+    // galaxy_gradient *= 1.0 + sin(gp.x * 40.0);
+    galaxy_gradient = clamp(galaxy_gradient - 2.0, 0.0, 1.0);
+
+    a += galaxy_gradient * 0.05 * gw;
+    c.r -= galaxy_gradient * (1.0 + sin(globals.time * 0.1) * 0.8) * gw;
+    c.b -= galaxy_gradient * (0.5 + sin(globals.time * 0.1 + 2.0) * 0.8) * gw;
+    
 
     // c = step(vec3(0.1), c);
     

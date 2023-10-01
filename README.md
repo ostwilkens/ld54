@@ -49,7 +49,10 @@
 - ~~Crate leaves a particle trail~~
 - ~~Camera shake on death~~
 - ~~Victory sound~~
-- Mercury
+- ~~Mercury - circulating around sun~~
+- ~~Mercury model~~
+- ~~Mercury gravity~~
+- ~~Mercury coll~~
 
 - Level tuning
 - Level 1-3 are good, level 4 needs a new element: moon/mercurius?
@@ -61,6 +64,7 @@
 
 
 ### Wishlist
+- Increase distance to sun on higher levels?
 - Full screen flash on explosion
 - Logo 
 - Master bgm
