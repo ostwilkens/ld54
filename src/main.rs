@@ -61,7 +61,7 @@ fn main() {
     )
     .insert_resource(ClearColor(Color::hsl(PRIMARY_COLOR_HUE * 360.0, 0.2, 0.1)))
     .insert_resource(Score(0))
-    .insert_resource(Level(1))
+    .insert_resource(Level(3))
     .insert_resource(FixedTime::new_from_secs(1.0 / 60.0))
     .insert_resource(LaunchPower(Stopwatch::new()))
     .insert_resource(PrimaryColorHue(PRIMARY_COLOR_HUE))
@@ -1195,7 +1195,7 @@ fn attach_debris_to_crate_collision(
             let crate_pos = crate_transform.translation.xy();
 
             let distance = debris_pos.distance(crate_pos);
-            if distance < 3.0 {
+            if distance < 3.5 {
                 // add camera shake
                 camera_shake.0 = 0.1;
 
@@ -1207,7 +1207,7 @@ fn attach_debris_to_crate_collision(
 
                 // new debris pos = diff transformed by crate rotation
                 let new_debris_pos = crate_transform.rotation.inverse() * diff;
-                debris_transform.translation = new_debris_pos;
+                debris_transform.translation = new_debris_pos * 0.7;
 
                 // increase crate mass
                 crate_mass.0 += 0.22;
@@ -1352,7 +1352,7 @@ fn remove_crate_on_sun_collision(
             let sun_pos = sun_transform.translation.xy();
             let crate_pos = crate_global_transform.translation().xy();
             let distance = sun_pos.distance(crate_pos);
-            if distance < 13.0 {
+            if distance < 13.2 {
                 // add camera shake
                 camera_shake.0 = 2.0;
 
@@ -1394,22 +1394,6 @@ fn remove_crate_on_sun_collision(
                     EarthDestroyedSound,
                 ));
 
-                // play success sound
-                commands.spawn((
-                    AudioBundle {
-                        source: success_audio_handle.handle.clone().into(),
-                        settings: PlaybackSettings {
-                            mode: PlaybackMode::Despawn,
-                            volume: Volume::Relative(VolumeLevel::new(0.8)),
-                            speed: 2.5,
-                            paused: false,
-                            ..default()
-                        },
-                        ..default()
-                    },
-                    SuccessSound,
-                ));
-
                 // spawn explosion
                 commands.spawn((
                     PbrBundle {
@@ -1426,6 +1410,22 @@ fn remove_crate_on_sun_collision(
                 let num_debris = q_floating_debris.iter().count();
                 if num_debris == 0 {
                     level.0 += 1;
+
+                    // play success sound
+                    commands.spawn((
+                        AudioBundle {
+                            source: success_audio_handle.handle.clone().into(),
+                            settings: PlaybackSettings {
+                                mode: PlaybackMode::Despawn,
+                                volume: Volume::Relative(VolumeLevel::new(0.8)),
+                                speed: 2.5,
+                                paused: false,
+                                ..default()
+                            },
+                            ..default()
+                        },
+                        SuccessSound,
+                    ));
 
                     // enter menu state for next level
                     next_state.set(GameState::Menu);
