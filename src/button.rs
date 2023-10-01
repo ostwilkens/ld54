@@ -37,7 +37,7 @@ impl<'w, 's> ButtonCommands<'w, 's> for Commands<'w, 's> {
 
         e.insert(ButtonBundle {
             style: Style {
-                width: Val::Px(200.0),
+                width: Val::Px(240.0),
                 height: Val::Px(100.0),
                 justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,

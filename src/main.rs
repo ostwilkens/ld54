@@ -29,6 +29,7 @@ mod button;
 mod utils;
 
 static PRIMARY_COLOR_HUE: f32 = 0.59;
+// static PRIMARY_COLOR_HUE: f32 = 0.8;
 static MENU_MUSIC_VOLUME: f32 = 0.5;
 static PLAYING_MUSIC_VOLUME: f32 = 0.8;
 
@@ -171,6 +172,9 @@ struct EarthDestroyedSound;
 struct ScoreText;
 
 #[derive(Component)]
+struct InfoText;
+
+#[derive(Component)]
 struct InstructionText;
 
 #[derive(Resource)]
@@ -203,6 +207,7 @@ fn setup(
     mut bg_materials: ResMut<Assets<BackgroundMaterial>>,
     asset_server: Res<AssetServer>,
     level: Res<Level>,
+    score: Res<Score>,
 ) {
     // spawn kill text
     commands.spawn((
@@ -256,22 +261,24 @@ fn setup(
     ));
 
     // spawn instruction text
-    commands.spawn((
-        InstructionText,
-        TextBundle::from_section(
-            "Hold down mouse button to fire",
-            TextStyle {
-                font_size: 32.0,
-                color: Color::WHITE,
+    if level.0 < 4 {
+        commands.spawn((
+            InstructionText,
+            TextBundle::from_section(
+                "Hold down mouse button to fire",
+                TextStyle {
+                    font_size: 32.0,
+                    color: Color::WHITE,
+                    ..default()
+                },
+            )
+            .with_style(Style {
+                position_type: PositionType::Absolute,
+                margin: UiRect::new(Val::Auto, Val::Auto, Val::Auto, Val::Vh(30.0)),
                 ..default()
-            },
-        )
-        .with_style(Style {
-            position_type: PositionType::Absolute,
-            margin: UiRect::new(Val::Auto, Val::Auto, Val::Auto, Val::Vh(30.0)),
-            ..default()
-        }),
-    ));
+            }),
+        ));
+    }
 
     // music
     commands.spawn((
@@ -771,6 +778,7 @@ fn on_enter_launched(
     charge_sound_controller: Query<(Entity, &AudioSink), With<ChargeSound>>,
     whining_controller: Query<&AudioSink, With<WhiningSound>>,
     mut camera_shake: ResMut<CameraShake>,
+    mut score: ResMut<Score>,
 ) {
     // shake camera
     camera_shake.0 = 0.5 + launch_power.0.elapsed_secs() * 0.8;
@@ -822,6 +830,9 @@ fn on_enter_launched(
 
     // reset launch_power
     launch_power.0.reset();
+
+    // increase score
+    score.0 += 1;
 }
 
 // if in state ChargingLaunch & LMB not pressed, go to Launched
@@ -1069,15 +1080,48 @@ fn on_enter_menu(
         (With<InstructionText>, Without<ScoreText>),
     >,
     level: Res<Level>,
+    mut primary_color_hue: ResMut<PrimaryColorHue>,
+    score: Res<Score>,
 ) {
     // set music volume
     for sink in music_controller.iter() {
         sink.set_volume(MENU_MUSIC_VOLUME);
     }
 
-    commands
-        .spawn_text_button("Play", PRIMARY_COLOR_HUE)
-        .insert(PlayButton);
+    // hehu
+    // if reached level 2, replace play button with purple "Endless Mode" button
+    if level.0 > 5 {
+        primary_color_hue.0 = 0.8;
+
+        commands
+            .spawn_text_button("Endless Mode", 0.8)
+            .insert(PlayButton);
+    } else {
+        commands
+            .spawn_text_button("Play", PRIMARY_COLOR_HUE)
+            .insert(PlayButton);
+    }
+
+    // spawn info text when finishing level 1
+    if level.0 == 6 {
+        commands.spawn((
+            InfoText,
+            TextBundle::from_section(
+                format!("Finished using {} crates!", score.0),
+                TextStyle {
+                    font_size: 48.0,
+                    color: Color::LIME_GREEN,
+                    ..default()
+                },
+            )
+            .with_style(Style {
+                position_type: PositionType::Absolute,
+                margin: UiRect::new(Val::Auto, Val::Auto, Val::Vh(30.0), Val::Auto),
+                ..default()
+            }),
+        ));
+    }
+
 
     // update level text
     for (ent, mut style, mut text) in q_score_text.iter_mut() {
@@ -1118,7 +1162,21 @@ fn on_enter_playing(
     debris_scene: Res<AssetHandle<Debris, Scene>>,
     level: Res<Level>,
     q_debris: Query<Entity, With<Debris>>,
+    q_info_text: Query<Entity, With<InfoText>>,
+    q_instruction_text: Query<Entity, With<InstructionText>>,
 ) {
+    // despawn InfoText
+    for ent in q_info_text.iter() {
+        commands.entity(ent).despawn_recursive();
+    }
+
+    // // if level > 2, hide instruction text
+    // if level.0 > 2 {
+    //     for ent in q_instruction_text.iter() {
+    //         commands.entity(ent).despawn_recursive();
+    //     }
+    // }
+
     // reset score
     // score.0 = 0;
 
@@ -1182,7 +1240,14 @@ fn on_enter_playing(
     // }
     // spawn debris in a circle around sun
     let radius = 22.0 + level.0 as f32 * 1.0;
-    let num_debris: i32 = 0 + level.0 as i32 * 1 + (level.0 as i32 - 2).max(0) * 2;
+    let mut num_debris: i32 = 0 + level.0 as i32 * 1 + (level.0 as i32 - 2).max(0) * 2;
+
+    if level.0 > 4 {
+        num_debris -= 4;
+    }
+
+    // num_debris = 1;
+
     for i in 0..num_debris {
         let mut angle = i as f32 / num_debris as f32 * PI * 2.0 + PI - 0.7 + level.0 as f32 + 3.9;
         angle *= 1.0 + level.0 as f32 * 0.38;
@@ -1290,7 +1355,7 @@ fn attach_debris_to_crate_collision(
             let crate_pos = crate_transform.translation.xy();
 
             let distance = debris_pos.distance(crate_pos);
-            if distance < 3.5 {
+            if distance < 3.7 {
                 // add camera shake
                 camera_shake.0 = 0.1;
 
@@ -1302,7 +1367,7 @@ fn attach_debris_to_crate_collision(
 
                 // new debris pos = diff transformed by crate rotation
                 let new_debris_pos = crate_transform.rotation.inverse() * diff;
-                debris_transform.translation = new_debris_pos * 0.7;
+                debris_transform.translation = new_debris_pos * 0.8;
 
                 // increase crate mass
                 crate_mass.0 += 0.22;
@@ -1371,7 +1436,7 @@ fn remove_crate_on_earth_collision(
                 commands.entity(crate_ent).despawn_recursive();
 
                 // reset score
-                score.0 = 0;
+                // score.0 = 0;
 
                 // play earth destroyed sound
                 commands.spawn((
@@ -1447,7 +1512,7 @@ fn remove_crate_on_mercury_collision(
             let mercury_pos = mercury_transform.translation.xy();
             let crate_pos = crate_transform.translation.xy();
             let distance = mercury_pos.distance(crate_pos);
-            if distance < 3.2 {
+            if distance < 3.0 {
                 // add camera shake
                 camera_shake.0 = 3.0;
 
@@ -1502,7 +1567,7 @@ fn remove_crate_on_mercury_collision(
                 commands.entity(crate_ent).despawn_recursive();
 
                 // reset score
-                score.0 = 0;
+                // score.0 = 0;
 
                 // play earth destroyed sound
                 commands.spawn((
@@ -1572,6 +1637,7 @@ fn remove_crate_on_sun_collision(
     mut q_kill_text: Query<(Entity, &mut Style, &mut Text), With<KillLogText>>,
     mut camera_shake: ResMut<CameraShake>,
     success_audio_handle: Res<AssetHandle<SuccessSound, AudioSource>>,
+    mut q_play_button: Query<(Entity), (With<Button>, Without<KillLogText>)>,
 ) {
     for (crate_ent, crate_str, crate_global_transform) in q_crate.iter_mut() {
         for sun_transform in q_sun.iter() {
@@ -1603,7 +1669,7 @@ fn remove_crate_on_sun_collision(
                 commands.entity(crate_ent).despawn_recursive();
 
                 // increase score
-                score.0 += 1;
+                // score.0 += 1;
 
                 // play earth destroyed sound
                 commands.spawn((

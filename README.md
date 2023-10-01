@@ -54,23 +54,23 @@
 - ~~Mercury gravity~~
 - ~~Mercury coll~~
 - ~~Touch controls~~
-- Finish game at level 6? 7? And show total fired crates as score
-- Level tuning
-- Test in Chrome
-- Write short story/description
+- ~~Test in Safari~~
+- ~~Test in Chrome~~
+- ~~Test in Firefox~~
+- ~~Count score~~
+- ~~Show "Finished game!" + score + "Endless Mode"~~
+- ~~Finish game at level 5 and 2 less debris~~
+- ~~Level tuning~~
+- ~~Write short story/description~~
 - Give feedback to 100 games
 
 
 ### Wishlist
-- Increase distance to sun on higher levels?
 - Full screen flash on explosion
 - Logo 
 - Master bgm
 - Cheering pikmin sound when launching
-- Juice
 - Performance
-- Test in Safari
-- Test in Firefox
 - Test Linux native
 - Test MacOS native
 - Test Windows native
