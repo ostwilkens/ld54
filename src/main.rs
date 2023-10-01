@@ -61,7 +61,7 @@ fn main() {
     )
     .insert_resource(ClearColor(Color::hsl(PRIMARY_COLOR_HUE * 360.0, 0.2, 0.1)))
     .insert_resource(Score(0))
-    .insert_resource(Level(5))
+    .insert_resource(Level(1))
     .insert_resource(FixedTime::new_from_secs(1.0 / 60.0))
     .insert_resource(LaunchPower(Stopwatch::new()))
     .insert_resource(PrimaryColorHue(PRIMARY_COLOR_HUE))
