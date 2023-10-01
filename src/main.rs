@@ -105,7 +105,6 @@ fn main() {
             // apply_gravity,
             // remove_crate_on_sun_collision,
             remove_crate_on_earth_collision,
-            
             fade_explosions,
             update_camera_position,
             attach_debris_to_crate_collision,
@@ -352,7 +351,7 @@ fn setup(
             ..default()
         },
         BloomSettings {
-            intensity: 0.14,
+            intensity: 0.18,
             ..default()
         },
     ));
@@ -654,7 +653,6 @@ fn on_enter_ready(
         "Razor blades",
         "Poor fella",
         "Poor fella",
-        "Poor fella",
         "Dead memes",
         "Old phones",
         "Broken eggs",
@@ -720,9 +718,10 @@ fn start_launching(
     mut commands: Commands,
     mut next_state: ResMut<NextState<GameState>>,
     mouse_button_input: Res<Input<MouseButton>>,
+    touches: Res<Touches>,
     mut launch_power: ResMut<LaunchPower>,
 ) {
-    if mouse_button_input.just_pressed(MouseButton::Left) {
+    if mouse_button_input.just_pressed(MouseButton::Left) || touches.any_just_pressed() {
         next_state.set(GameState::ChargingLaunch);
 
         // reset launch_power
@@ -832,8 +831,9 @@ fn launch(
     mouse_button_input: Res<Input<MouseButton>>,
     current_crate: Query<Entity, With<CurrentCrate>>,
     launch_power: Res<LaunchPower>,
+    touches: Res<Touches>,
 ) {
-    if mouse_button_input.just_released(MouseButton::Left) {
+    if mouse_button_input.just_released(MouseButton::Left) || touches.any_just_released() {
         next_state.set(GameState::Launched);
     }
 }
@@ -891,56 +891,62 @@ fn update_cannon_transform(
     time: Res<Time>,
     camera_q: Query<(&Camera, &GlobalTransform)>,
     launch_power: Res<LaunchPower>,
+    touches: Res<Touches>,
 ) {
     let (camera, camera_transform) = camera_q.single();
 
     if let Ok(mut window) = primary_window.get_single() {
-        let window_width = window.width() as f32;
-        let window_x_center = window_width / 2.0;
+        let fallback_cursor_pos = Vec2::new(window.width() as f32 / 2.0, window.height() as f32 / 2.0);
 
-        if let Some(cursor) = window.cursor_position() {
-            for mut transform in q_cannon.iter_mut() {
-                let earth_transform = q_earth.single();
-                if let Some(cursor_world_pos) = window
-                    .cursor_position()
-                    .and_then(|cursor| camera.viewport_to_world(camera_transform, cursor))
-                    .map(|ray| ray.origin.truncate())
-                {
-                    let offset = cursor_world_pos - earth_transform.translation.xy();
-                    let normal = offset.normalize();
-                    let radius = 6.0;
-                    let x = normal.x * radius;
-                    let y = normal.y * radius;
+        let cursor = if let Some(touch) = touches.first_pressed_position() {
+            Some(touch)
+        } else {
+            window.cursor_position()
+        };
 
-                    let n = time.delta_seconds() * 16.0;
+        let cursor = cursor.unwrap_or(fallback_cursor_pos);
 
-                    let current_translation = transform.translation;
-                    let target_translation = Vec3::new(x, y, 0.0) + earth_transform.translation;
-                    let current_rotation = transform.rotation;
-                    //lookat
-                    let target_rotation = Quat::from_rotation_z(-normal.x.atan2(normal.y));
-                    let new_translation = current_translation.lerp(target_translation, n);
-                    let new_rotation = current_rotation.lerp(target_rotation, n);
+        for mut transform in q_cannon.iter_mut() {
+            let earth_transform = q_earth.single();
+            if let Some(cursor_world_pos) = camera
+                .viewport_to_world(camera_transform, cursor)
+                .map(|ray| ray.origin.truncate())
+            {
+                let offset = cursor_world_pos - earth_transform.translation.xy();
+                let normal = offset.normalize();
+                let radius = 6.0;
+                let x = normal.x * radius;
+                let y = normal.y * radius;
 
-                    // also, rotate based on launch power
-                    let power = launch_power.0.elapsed_secs() * 1.35;
-                    let rotation = Quat::from_rotation_y(power * 0.5);
-                    let new_rotation = new_rotation * rotation;
+                let n = time.delta_seconds() * 16.0;
 
-                    // also, scale horizontally based on launch power
-                    let extra_width = power * 0.5;
-                    let scale = Vec3::new(
-                        1.0 + extra_width,
-                        1.0 - extra_width * 0.25,
-                        1.0 + extra_width,
-                    );
+                let current_translation = transform.translation;
+                let target_translation = Vec3::new(x, y, 0.0) + earth_transform.translation;
+                let current_rotation = transform.rotation;
+                //lookat
+                let target_rotation = Quat::from_rotation_z(-normal.x.atan2(normal.y));
+                let new_translation = current_translation.lerp(target_translation, n);
+                let new_rotation = current_rotation.lerp(target_rotation, n);
 
-                    transform.translation = new_translation;
-                    transform.rotation = new_rotation;
-                    transform.scale = scale;
-                }
+                // also, rotate based on launch power
+                let power = launch_power.0.elapsed_secs() * 1.35;
+                let rotation = Quat::from_rotation_y(power * 0.5);
+                let new_rotation = new_rotation * rotation;
+
+                // also, scale horizontally based on launch power
+                let extra_width = power * 0.5;
+                let scale = Vec3::new(
+                    1.0 + extra_width,
+                    1.0 - extra_width * 0.25,
+                    1.0 + extra_width,
+                );
+
+                transform.translation = new_translation;
+                transform.rotation = new_rotation;
+                transform.scale = scale;
             }
         }
+        // }
     }
 }
 
@@ -1465,7 +1471,7 @@ fn remove_crate_on_mercury_collision(
 
                 // deparent debris and move to OriginalTransform
                 for (debris_ent, original_transform) in q_picked_up_debris.iter() {
-                    
+
                     // commands.entity(debris_ent).remove::<Parent>();
                     // commands.entity(debris_ent).remove::<PickedUp>();
                     // commands.entity(debris_ent).insert(original_transform.0.clone());

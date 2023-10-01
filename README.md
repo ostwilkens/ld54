@@ -53,11 +53,9 @@
 - ~~Mercury model~~
 - ~~Mercury gravity~~
 - ~~Mercury coll~~
-
+- ~~Touch controls~~
+- Finish game at level 6? 7? And show total fired crates as score
 - Level tuning
-- Level 1-3 are good, level 4 needs a new element: moon/mercurius?
-- Self destruct crate after 10?s
-- Touch controls
 - Test in Chrome
 - Write short story/description
 - Give feedback to 100 games
