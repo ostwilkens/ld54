@@ -49,6 +49,7 @@
 - ~~Crate leaves a particle trail~~
 - ~~Camera shake on death~~
 - ~~Victory sound~~
+- Mercury
 
 - Level tuning
 - Level 1-3 are good, level 4 needs a new element: moon/mercurius?
