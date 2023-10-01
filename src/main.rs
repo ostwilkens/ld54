@@ -60,7 +60,7 @@ fn main() {
     )
     .insert_resource(ClearColor(Color::hsl(PRIMARY_COLOR_HUE * 360.0, 0.2, 0.1)))
     .insert_resource(Score(0))
-    .insert_resource(Level(1))
+    .insert_resource(Level(3))
     .insert_resource(FixedTime::new_from_secs(1.0 / 60.0))
     .insert_resource(LaunchPower(Stopwatch::new()))
     .insert_resource(PrimaryColorHue(PRIMARY_COLOR_HUE))
@@ -78,7 +78,7 @@ fn main() {
     .add_systems(FixedUpdate, (apply_gravity))
     .add_systems(
         Update,
-        (increase_crate_mass, orbit_debris).run_if(in_state(GameState::Launched)),
+        (increase_crate_mass, orbit_debris, remove_crate_on_sun_collision,).run_if(in_state(GameState::Launched)),
     )
     .add_systems(
         Update,
@@ -93,11 +93,12 @@ fn main() {
             rotate_crates,
             apply_velocity,
             // apply_gravity,
-            remove_crate_on_sun_collision,
+            // remove_crate_on_sun_collision,
             remove_crate_on_earth_collision,
             fade_explosions,
             update_camera_position,
             attach_debris_to_crate_collision,
+            update_music_speed,
         ),
     )
     .add_systems(
@@ -167,6 +168,9 @@ struct Explosion;
 // #[derive(Resource)]
 // struct ExplosionMaterial(Option<Handle<ColorMaterial>>);
 
+#[derive(Component)]
+struct WhiningSound;
+
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -177,6 +181,21 @@ fn setup(
     asset_server: Res<AssetServer>,
     level: Res<Level>,
 ) {
+    // whining
+    commands.spawn((
+        AudioBundle {
+            source: asset_server.load("aaa.ogg"),
+            settings: PlaybackSettings {
+                paused: false,
+                mode: PlaybackMode::Loop,
+                volume: Volume::Relative(VolumeLevel::new(0.0)),
+                ..default()
+            },
+            ..default()
+        },
+        WhiningSound,
+    ));
+
     // spawn score text
     commands.spawn((
         ScoreText,
@@ -409,7 +428,7 @@ fn orbit_debris(
     q_sun: Query<&Transform, (With<Sun>, Without<Debris>)>,
     level: Res<Level>,
 ) {
-    // return;
+    return; // Spinning debris = free win.. :P
 
     let speed = ((level.0 as f32 - 3.0).max(0.0) * 0.1).min(0.3);
 
@@ -558,7 +577,15 @@ fn on_enter_launched(
     cannon: Query<&Transform, (With<Cannon>, Without<Earth>)>,
     earth: Query<&Transform, (With<Earth>, Without<Cannon>)>,
     charge_sound_controller: Query<(Entity, &AudioSink), With<ChargeSound>>,
+    whining_controller: Query<&AudioSink, With<WhiningSound>>,
 ) {
+    // set whining speed
+    for sink in whining_controller.iter() {
+        // sink.play();
+        sink.set_speed(0.1);
+        // sink.set_volume(0.9);
+    }
+
     for (ent, sink) in charge_sound_controller.iter() {
         sink.stop();
         commands.entity(ent).despawn_recursive();
@@ -585,7 +612,7 @@ fn on_enter_launched(
     let diff_normal = translation_diff.normalize().xy();
 
     // add Velocity to current crate
-    let power = launch_power.0.elapsed_secs() * 1.3;
+    let power = launch_power.0.elapsed_secs() * 1.35;
     commands
         .entity(crate_ent)
         .insert(Velocity(diff_normal * power));
@@ -632,7 +659,7 @@ fn apply_gravity(
             let crate_pos = crate_transform.translation;
             let distance = sun_pos.distance(crate_pos);
             let direction = (sun_pos - crate_pos).normalize();
-            let gravity = (direction * 2.5 * mass.0) / distance.powi(2);
+            let gravity = (direction * 2.3 * mass.0) / distance.powi(2);
             velocity.0 += Vec2::new(gravity.x, gravity.y);
         }
     }
@@ -666,25 +693,26 @@ fn update_cannon_transform(
                 if let Some(cursor_world_pos) = window
                     .cursor_position()
                     .and_then(|cursor| camera.viewport_to_world(camera_transform, cursor))
-                    .map(|ray| ray.origin.truncate()) {
-                        let offset = cursor_world_pos - earth_transform.translation.xy();
-                        let normal = offset.normalize();
-                        let radius = 6.0;
-                        let x = normal.x * radius;
-                        let y = normal.y * radius;
-        
-                        let n = time.delta_seconds() * 16.0;
-        
-                        let current_translation = transform.translation;
-                        let target_translation = Vec3::new(x, y, 0.0) + earth_transform.translation;
-                        let current_rotation = transform.rotation;
-                        //lookat
-                        let target_rotation = Quat::from_rotation_z(-normal.x.atan2(normal.y));
-                        let new_translation = current_translation.lerp(target_translation, n);
-                        let new_rotation = current_rotation.lerp(target_rotation, n);
-                        transform.translation = new_translation;
-                        transform.rotation = new_rotation;
-                    }
+                    .map(|ray| ray.origin.truncate())
+                {
+                    let offset = cursor_world_pos - earth_transform.translation.xy();
+                    let normal = offset.normalize();
+                    let radius = 6.0;
+                    let x = normal.x * radius;
+                    let y = normal.y * radius;
+
+                    let n = time.delta_seconds() * 16.0;
+
+                    let current_translation = transform.translation;
+                    let target_translation = Vec3::new(x, y, 0.0) + earth_transform.translation;
+                    let current_rotation = transform.rotation;
+                    //lookat
+                    let target_rotation = Quat::from_rotation_z(-normal.x.atan2(normal.y));
+                    let new_translation = current_translation.lerp(target_translation, n);
+                    let new_rotation = current_rotation.lerp(target_rotation, n);
+                    transform.translation = new_translation;
+                    transform.rotation = new_rotation;
+                }
             }
         }
     }
@@ -896,10 +924,10 @@ fn on_enter_playing(
     // }
     // spawn debris in a circle around sun
     let radius = 22.0 + level.0 as f32 * 1.0;
-    let num_debris = 0 + level.0 * 2 - 1;
+    let num_debris: i32 = 0 + level.0 as i32 * 1 + (level.0 as i32 - 2).max(0) * 2;
     for i in 0..num_debris {
-        let mut angle = i as f32 / num_debris as f32 * PI * 2.0 + PI - 0.7 + level.0 as f32 - 1.0;
-        angle *= 1.0 + level.0 as f32 * 0.3;
+        let mut angle = i as f32 / num_debris as f32 * PI * 2.0 + PI - 0.7 + level.0 as f32 + 3.9;
+        angle *= 1.0 + level.0 as f32 * 0.38;
         let x = angle.sin() * radius + (i as f32 * 12.5 + 1.0).sin() * 5.0;
         let y = angle.cos() * radius + (i as f32 * 48.3 + 4.0).sin() * 5.0;
         commands.spawn((
@@ -940,21 +968,34 @@ fn exit_on_esc(keyboard_input: ResMut<Input<KeyCode>>, mut exit: EventWriter<App
 }
 
 fn update_music_speed(
-    music_controller: Query<&AudioSink, With<Music>>,
-    sw: Option<Res<GameTime>>,
+    // music_controller: Query<&AudioSink, With<Music>>,
+    // sw: Option<Res<GameTime>>,
     time: Res<Time>,
+    q_current_crate: Query<(&Transform, &Velocity), With<CurrentCrate>>,
+    whining_controller: Query<&AudioSink, With<WhiningSound>>,
 ) {
-    let target_speed = if let Some(sw) = sw {
-        1.0 + sw.0.elapsed_secs() * 0.015
-    } else {
-        1.0
-    };
+    if let Ok(whining_sink) = whining_controller.get_single() {
+        let current_volume = whining_sink.volume();
+        let current_speed = whining_sink.speed();
 
-    for sink in music_controller.iter() {
-        let current_speed = sink.speed();
-        let n = time.delta_seconds() * 8.0;
+        let mut target_volume = 0.0;
+        let mut target_speed = 0.1;
+
+        if let Ok((crate_transform, crate_velocity)) = q_current_crate.get_single() {
+            let crate_pos = crate_transform.translation.xy();
+            let crate_speed = crate_velocity.0.length();
+
+            target_volume = 0.1 + (crate_speed * 0.25);
+            target_speed = 1.0 + (crate_speed * 0.1);
+        }
+
+        let n = time.delta_seconds() * 6.0;
+
         let new_speed = current_speed * (1.0 - n) + target_speed * n;
-        sink.set_speed(new_speed.clamp(0.0, 5.0));
+        let new_volume = current_volume * (1.0 - n) + target_volume * n;
+
+        whining_sink.set_speed(new_speed.clamp(0.1, 20.0));
+        whining_sink.set_volume(new_volume.clamp(0.0, 1.0));
     }
 }
 

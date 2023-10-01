@@ -33,9 +33,14 @@
 - ~~Debris gets stuck to crate on collision~~
 - ~~Die if crate collides with earth~~
 - ~~Turret should face towards cursor~~
+- ~~Spinning debris = free win.. :P~~
+- ~~Crates make a whining sound while circulating the sun~~
 - Visual power meter
-- Self destruct crate after 10?s
+
+- Text shows what just got disintegrated
 - Level tuning
+- Level 1-3 are good, level 4 needs a new element: moon/mercurius?
+- Self destruct crate after 10?s
 - Touch controls
 - New level / victory sound
 - Debris pickup sound (mergey splop)
