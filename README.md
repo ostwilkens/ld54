@@ -35,9 +35,9 @@
 - ~~Turret should face towards cursor~~
 - ~~Spinning debris = free win.. :P~~
 - ~~Crates make a whining sound while circulating the sun~~
-- Visual power meter
+- ~~Make blender cube cooler~~
+- ~~Visual power meter~~
 
-- Text shows what just got disintegrated
 - Level tuning
 - Level 1-3 are good, level 4 needs a new element: moon/mercurius?
 - Self destruct crate after 10?s
@@ -50,6 +50,7 @@
 
 
 ### Wishlist
+- Text shows what just got disintegrated
 - Crate leaves a particle trail
 - Camera shake on death
 - Full screen flash on explosion
@@ -63,5 +64,3 @@
 - Test Linux native
 - Test MacOS native
 - Test Windows native
-- Make blender cube cooler
-- Better music?

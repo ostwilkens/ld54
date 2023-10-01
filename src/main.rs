@@ -396,7 +396,7 @@ fn setup(
         SceneBundle {
             scene: asset_server.load("launcher.glb#Scene0"),
             transform: Transform::from_xyz(0.0, 0.0, 0.0)
-                // .with_scale(Vec3::splat(5.0))
+                .with_scale(Vec3::splat(1.0))
                 .with_rotation(Quat::from_euler(EulerRot::XYZ, 1.0, 0.0, 1.0)),
             ..default()
         },
@@ -569,7 +569,7 @@ fn on_enter_charging(mut commands: Commands, asset_server: Res<AssetServer>) {
 fn on_enter_launched(
     asset_server: Res<AssetServer>,
     mut commands: Commands,
-    launch_power: Res<LaunchPower>,
+    mut launch_power: ResMut<LaunchPower>,
     mut current_crate: Query<
         (Entity, &mut Transform, &GlobalTransform),
         (With<CurrentCrate>, Without<Cannon>, Without<Earth>),
@@ -623,6 +623,9 @@ fn on_enter_launched(
 
     // move current_crate from parent to root
     commands.entity(crate_ent).remove::<Parent>();
+
+    // reset launch_power
+    launch_power.0.reset();
 }
 
 // if in state ChargingLaunch & LMB not pressed, go to Launched
@@ -680,6 +683,7 @@ fn update_cannon_transform(
     primary_window: Query<&Window, With<PrimaryWindow>>,
     time: Res<Time>,
     camera_q: Query<(&Camera, &GlobalTransform)>,
+    launch_power: Res<LaunchPower>,
 ) {
     let (camera, camera_transform) = camera_q.single();
 
@@ -710,8 +714,19 @@ fn update_cannon_transform(
                     let target_rotation = Quat::from_rotation_z(-normal.x.atan2(normal.y));
                     let new_translation = current_translation.lerp(target_translation, n);
                     let new_rotation = current_rotation.lerp(target_rotation, n);
+
+                    // also, rotate based on launch power
+                    let power = launch_power.0.elapsed_secs() * 1.35;
+                    let rotation = Quat::from_rotation_y(power * 0.5);
+                    let new_rotation = new_rotation * rotation;
+
+                    // also, scale horizontally based on launch power
+                    let extra_width = power * 0.5;
+                    let scale = Vec3::new(1.0 + extra_width, 1.0 - extra_width * 0.25, 1.0 + extra_width);
+
                     transform.translation = new_translation;
                     transform.rotation = new_rotation;
+                    transform.scale = scale;
                 }
             }
         }
