@@ -62,7 +62,10 @@
 - ~~Finish game at level 5 and 2 less debris~~
 - ~~Level tuning~~
 - ~~Write short story/description~~
-- Cover image (640x512)
+- ~~Test MacOS native~~
+- ~~Test Windows native~~
+- ~~Cover image (640x512)~~~
+- Publish
 - Tweet
 - Give feedback to 100 games
 
@@ -73,5 +76,3 @@
 - Cheering pikmin sound when launching
 - Performance
 - Test Linux native
-- Test MacOS native
-- Test Windows native
