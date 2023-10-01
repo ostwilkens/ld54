@@ -14,7 +14,7 @@ use bevy::{
     },
     sprite::{Material2d, Material2dPlugin, MaterialMesh2dBundle},
     time::Stopwatch,
-    window::PrimaryWindow, a11y::accesskit::TextDirection,
+    window::PrimaryWindow,
 };
 use button::{interact_button, ButtonCommands};
 // use mute::MuteButtonPlugin;
@@ -66,6 +66,7 @@ fn main() {
     .insert_resource(LaunchPower(Stopwatch::new()))
     .insert_resource(PrimaryColorHue(PRIMARY_COLOR_HUE))
     .insert_resource(KillLog(Vec::new()))
+    .insert_resource(CameraShake(1.0))
     .add_plugins(MaterialPlugin::<SunMaterial>::default())
     .add_plugins(MaterialPlugin::<BackgroundMaterial>::default())
     // .add_plugins(MuteButtonPlugin)
@@ -80,7 +81,13 @@ fn main() {
     .add_systems(FixedUpdate, (apply_gravity))
     .add_systems(
         Update,
-        (increase_crate_mass, spawn_crate_trail, orbit_debris, remove_crate_on_sun_collision,).run_if(in_state(GameState::Launched)),
+        (
+            increase_crate_mass,
+            spawn_crate_trail,
+            orbit_debris,
+            remove_crate_on_sun_collision,
+        )
+            .run_if(in_state(GameState::Launched)),
     )
     .add_systems(
         Update,
@@ -170,6 +177,9 @@ struct KillLogText;
 #[derive(Component)]
 struct Explosion;
 
+#[derive(Resource)]
+struct CameraShake(f32);
+
 // #[derive(Resource)]
 // struct ExplosionMesh(Option<Handle<Mesh>>);
 
@@ -206,7 +216,6 @@ fn setup(
             ..default()
         }),
     ));
-
 
     // whining
     commands.spawn((
@@ -487,7 +496,7 @@ fn orbit_debris(
 
 fn spawn_crate_trail(
     mut commands: Commands,
-    mut q_crate: Query<&Transform, With<Crate>>, 
+    mut q_crate: Query<&Transform, With<Crate>>,
     time: Res<Time>,
     mut last_spawned: Local<Option<Duration>>,
     explosion_mesh: Res<AssetHandle<Explosion, Mesh>>,
@@ -510,7 +519,7 @@ fn spawn_crate_trail(
                 mesh: explosion_mesh.handle.clone().into(),
                 material: explosion_mtl.handle.clone().into(),
                 transform: Transform::from_xyz(crate_pos.x, crate_pos.y, 1.0)
-                    .with_scale(Vec3::splat(  (0.01 + rand::random::<f32>()) * 0.3 )),
+                    .with_scale(Vec3::splat((0.01 + rand::random::<f32>()) * 0.3)),
                 ..default()
             },
             Explosion,
@@ -520,8 +529,6 @@ fn spawn_crate_trail(
             )),
         ));
     }
-
-    
 }
 
 fn increase_crate_mass(mut q_crate: Query<&mut Mass, With<Crate>>, time: Res<Time>) {
@@ -676,7 +683,11 @@ fn on_enter_launched(
     earth: Query<&Transform, (With<Earth>, Without<Cannon>)>,
     charge_sound_controller: Query<(Entity, &AudioSink), With<ChargeSound>>,
     whining_controller: Query<&AudioSink, With<WhiningSound>>,
+    mut camera_shake: ResMut<CameraShake>,
 ) {
+    // shake camera
+    camera_shake.0 = 0.5 + launch_power.0.elapsed_secs() * 0.8;
+
     // set whining speed
     for sink in whining_controller.iter() {
         // sink.play();
@@ -710,7 +721,7 @@ fn on_enter_launched(
     let diff_normal = translation_diff.normalize().xy();
 
     // add Velocity to current crate
-    let power = launch_power.0.elapsed_secs() * 1.35;
+    let power = launch_power.0.elapsed_secs() * 1.5;
     commands
         .entity(crate_ent)
         .insert(Velocity(diff_normal * power));
@@ -820,7 +831,11 @@ fn update_cannon_transform(
 
                     // also, scale horizontally based on launch power
                     let extra_width = power * 0.5;
-                    let scale = Vec3::new(1.0 + extra_width, 1.0 - extra_width * 0.25, 1.0 + extra_width);
+                    let scale = Vec3::new(
+                        1.0 + extra_width,
+                        1.0 - extra_width * 0.25,
+                        1.0 + extra_width,
+                    );
 
                     transform.translation = new_translation;
                     transform.rotation = new_rotation;
@@ -1097,7 +1112,9 @@ fn update_music_speed(
         if let Ok((crate_transform, crate_velocity, crate_str)) = q_current_crate.get_single() {
             let crate_pos = crate_transform.translation.xy();
             let crate_speed = crate_velocity.0.length();
-            let is_poor_fella = crate_str.0 == "Poor fella" || crate_str.0 == "Tiktokkers" || crate_str.0 == "Telemarketers";
+            let is_poor_fella = crate_str.0 == "Poor fella"
+                || crate_str.0 == "Tiktokkers"
+                || crate_str.0 == "Telemarketers";
 
             if is_poor_fella {
                 target_volume = 0.1 + (crate_speed * 0.25);
@@ -1125,7 +1142,8 @@ fn attach_debris_to_crate_collision(
         (Entity, &mut Transform),
         (With<Debris>, Without<PickedUp>, Without<CurrentCrate>),
     >,
-    slorp_audio_handle: Res<AssetHandle::<SlorpSound, AudioSource>>,
+    slorp_audio_handle: Res<AssetHandle<SlorpSound, AudioSource>>,
+    mut camera_shake: ResMut<CameraShake>,
 ) {
     for (crate_ent, crate_transform, mut crate_mass) in q_crate.iter_mut() {
         for (debris_ent, mut debris_transform) in q_debris.iter_mut() {
@@ -1134,6 +1152,9 @@ fn attach_debris_to_crate_collision(
 
             let distance = debris_pos.distance(crate_pos);
             if distance < 3.0 {
+                // add camera shake
+                camera_shake.0 = 0.1;
+
                 // attach debris to crate
                 commands.entity(crate_ent).add_child(debris_ent);
                 commands.entity(debris_ent).insert(PickedUp);
@@ -1176,6 +1197,7 @@ fn remove_crate_on_earth_collision(
     mut next_state: ResMut<NextState<GameState>>,
     explosion_mesh: Res<AssetHandle<Explosion, Mesh>>,
     explosion_mtl: Res<AssetHandle<Explosion, StandardMaterial>>,
+    mut camera_shake: ResMut<CameraShake>,
 ) {
     for (crate_ent, crate_transform) in q_crate.iter_mut() {
         for (earth_ent, earth_transform) in q_earth.iter() {
@@ -1183,6 +1205,9 @@ fn remove_crate_on_earth_collision(
             let crate_pos = crate_transform.translation.xy();
             let distance = earth_pos.distance(crate_pos);
             if distance < 5.0 {
+                // add camera shake
+                camera_shake.0 = 3.0;
+
                 // remove crate
                 commands.entity(crate_ent).despawn_recursive();
 
@@ -1255,6 +1280,7 @@ fn remove_crate_on_sun_collision(
     mut level: ResMut<Level>,
     mut kill_log: ResMut<KillLog>,
     mut q_kill_text: Query<(Entity, &mut Style, &mut Text), With<KillLogText>>,
+    mut camera_shake: ResMut<CameraShake>,
 ) {
     for (crate_ent, crate_str, crate_global_transform) in q_crate.iter_mut() {
         for sun_transform in q_sun.iter() {
@@ -1262,6 +1288,9 @@ fn remove_crate_on_sun_collision(
             let crate_pos = crate_global_transform.translation().xy();
             let distance = sun_pos.distance(crate_pos);
             if distance < 13.0 {
+                // add camera shake
+                camera_shake.0 = 2.0;
+
                 // add crate to kill log
                 kill_log.0.push(crate_str.0.clone());
 
@@ -1270,10 +1299,12 @@ fn remove_crate_on_sun_collision(
                     // set visible
                     style.display = Display::Flex;
 
-                    let kill_log_last_five: Vec<String> = kill_log.0.iter().rev().take(5).rev().cloned().collect();
+                    let kill_log_last_five: Vec<String> =
+                        kill_log.0.iter().rev().take(5).rev().cloned().collect();
 
                     for section in text.sections.iter_mut() {
-                        section.value = format!("Incineration log:\n{}", kill_log_last_five.join("\n"));
+                        section.value =
+                            format!("Incineration log:\n{}", kill_log_last_five.join("\n"));
                     }
                 }
 
@@ -1339,6 +1370,7 @@ fn update_camera_position(
     mut q_camera: Query<&mut Transform, (With<Camera>, Without<CurrentCrate>)>,
     q_current_crate: Query<&Transform, With<CurrentCrate>>,
     time: Res<Time>,
+    shake: Res<CameraShake>,
 ) {
     let mut target_camera_xy = vec2(0.0, 0.0);
 
@@ -1347,16 +1379,31 @@ fn update_camera_position(
         target_camera_xy = crate_xy;
     }
 
+    // add shake (based on quantized time)
+    let shake_amount = shake.0;
+    let shake_n = (time.elapsed_seconds() * 100.0).floor();
+    let shake_x = (shake_n * 55.5).sin() * shake_amount;
+    let shake_y = (shake_n * 77.5).cos() * shake_amount;
+    let shake_vec3 = vec3(shake_x, shake_y, 0.0);
+
     for mut camera_transform in q_camera.iter_mut() {
         let current_camera_xy = camera_transform.translation.xy();
         let new_camera_xy = current_camera_xy.lerp(target_camera_xy, time.delta_seconds() * 2.0);
         let new_camera_translation = vec3(new_camera_xy.x, new_camera_xy.y, 10.0);
 
-        camera_transform.translation = new_camera_translation;
+        camera_transform.translation = new_camera_translation + shake_vec3;
     }
 }
 
-fn always(time: Res<Time>, mut commands: Commands, mut next_state: ResMut<NextState<GameState>>) {}
+fn always(
+    time: Res<Time>,
+    mut commands: Commands,
+    mut next_state: ResMut<NextState<GameState>>,
+    mut camera_shake: ResMut<CameraShake>,
+) {
+    // update camera shake
+    camera_shake.0 *= 1.0 - time.delta_seconds() * 8.0;
+}
 
 #[derive(AsBindGroup, TypeUuid, TypePath, Debug, Clone)]
 #[uuid = "f690fdae-d598-45ab-8225-97e2a3f056e9"]

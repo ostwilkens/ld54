@@ -39,6 +39,8 @@
 - ~~Visual power meter~~
 - ~~Incineration log~~
 - ~~Debris pickup sound (mergey splop)~~
+- ~~Crate leaves a particle trail~~
+- ~~Camera shake on death~~
 
 - Level tuning
 - Level 1-3 are good, level 4 needs a new element: moon/mercurius?
@@ -51,8 +53,6 @@
 
 
 ### Wishlist
-- Crate leaves a particle trail
-- Camera shake on death
 - Full screen flash on explosion
 - Logo 
 - Master bgm
