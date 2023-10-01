@@ -14,13 +14,14 @@ use bevy::{
     },
     sprite::{Material2d, Material2dPlugin, MaterialMesh2dBundle},
     time::Stopwatch,
-    window::PrimaryWindow,
+    window::PrimaryWindow, a11y::accesskit::TextDirection,
 };
 use button::{interact_button, ButtonCommands};
 // use mute::MuteButtonPlugin;
 
 #[cfg(feature = "dev")]
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
+use rand::seq::SliceRandom;
 use utils::AssetHandle;
 
 mod button;
@@ -64,6 +65,7 @@ fn main() {
     .insert_resource(FixedTime::new_from_secs(1.0 / 60.0))
     .insert_resource(LaunchPower(Stopwatch::new()))
     .insert_resource(PrimaryColorHue(PRIMARY_COLOR_HUE))
+    .insert_resource(KillLog(Vec::new()))
     .add_plugins(MaterialPlugin::<SunMaterial>::default())
     .add_plugins(MaterialPlugin::<BackgroundMaterial>::default())
     // .add_plugins(MuteButtonPlugin)
@@ -78,7 +80,7 @@ fn main() {
     .add_systems(FixedUpdate, (apply_gravity))
     .add_systems(
         Update,
-        (increase_crate_mass, orbit_debris, remove_crate_on_sun_collision,).run_if(in_state(GameState::Launched)),
+        (increase_crate_mass, spawn_crate_trail, orbit_debris, remove_crate_on_sun_collision,).run_if(in_state(GameState::Launched)),
     )
     .add_systems(
         Update,
@@ -118,8 +120,8 @@ fn main() {
         (while_playing,).run_if(in_state(GameState::ReadyToLaunch)),
     );
 
-    #[cfg(feature = "dev")]
-    app.add_plugins(WorldInspectorPlugin::new());
+    // #[cfg(feature = "dev")]
+    // app.add_plugins(WorldInspectorPlugin::new());
 
     app.run();
 }
@@ -159,6 +161,12 @@ struct EarthDestroyedSound;
 #[derive(Component)]
 struct ScoreText;
 
+#[derive(Resource)]
+struct KillLog(Vec<String>);
+
+#[derive(Component)]
+struct KillLogText;
+
 #[derive(Component)]
 struct Explosion;
 
@@ -181,6 +189,25 @@ fn setup(
     asset_server: Res<AssetServer>,
     level: Res<Level>,
 ) {
+    // spawn kill text
+    commands.spawn((
+        KillLogText,
+        TextBundle::from_section(
+            "Incineration log:".to_string(),
+            TextStyle {
+                font_size: 20.0,
+                color: Color::WHITE,
+                ..default()
+            },
+        )
+        .with_style(Style {
+            position_type: PositionType::Absolute,
+            margin: UiRect::new(Val::Px(10.0), Val::Auto, Val::Px(10.0), Val::Auto),
+            ..default()
+        }),
+    ));
+
+
     // whining
     commands.spawn((
         AudioBundle {
@@ -302,6 +329,12 @@ fn setup(
     //     materials.add(Color::hsl((PRIMARY_COLOR_HUE - 0.5) * 360.0, 0.7, 0.8).into()),
     // ));
 
+    // load slorp sound
+    commands.insert_resource(AssetHandle::<SlorpSound, AudioSource>::new(
+        asset_server.load("slorp.ogg"),
+    ));
+
+    // load debris model
     commands.insert_resource(AssetHandle::<Debris, Scene>::new(
         asset_server.load("debris.glb#Scene0"),
     ));
@@ -421,6 +454,9 @@ fn setup(
     // });
 }
 
+#[derive(Component)]
+struct SlorpSound;
+
 // debris orbit the sun
 fn orbit_debris(
     time: Res<Time>,
@@ -447,6 +483,45 @@ fn orbit_debris(
             transform.translation = vec3(new_position.x, new_position.y, 0.0);
         }
     }
+}
+
+fn spawn_crate_trail(
+    mut commands: Commands,
+    mut q_crate: Query<&Transform, With<Crate>>, 
+    time: Res<Time>,
+    mut last_spawned: Local<Option<Duration>>,
+    explosion_mesh: Res<AssetHandle<Explosion, Mesh>>,
+    explosion_mtl: Res<AssetHandle<Explosion, StandardMaterial>>,
+) {
+    if let Some(last_spawned) = last_spawned.as_mut() {
+        if time.elapsed_seconds() - last_spawned.as_secs_f32() < 0.1 {
+            return;
+        }
+    }
+
+    if let Ok(crate_transform) = q_crate.get_single() {
+        let crate_pos = crate_transform.translation.xy();
+
+        // update last_spawned
+        *last_spawned = Some(time.elapsed());
+
+        commands.spawn((
+            PbrBundle {
+                mesh: explosion_mesh.handle.clone().into(),
+                material: explosion_mtl.handle.clone().into(),
+                transform: Transform::from_xyz(crate_pos.x, crate_pos.y, 1.0)
+                    .with_scale(Vec3::splat(  (0.01 + rand::random::<f32>()) * 0.3 )),
+                ..default()
+            },
+            Explosion,
+            Velocity(vec2(
+                rand::random::<f32>() - 0.5,
+                rand::random::<f32>() - 0.5,
+            )),
+        ));
+    }
+
+    
 }
 
 fn increase_crate_mass(mut q_crate: Query<&mut Mass, With<Crate>>, time: Res<Time>) {
@@ -479,6 +554,29 @@ fn on_enter_ready(
     q_cannon: Query<Entity, With<Cannon>>,
     asset_server: Res<AssetServer>,
 ) {
+    // things that humanity fires into the sun
+    let crate_strings = vec![
+        "Car tires",
+        "Nuclear waste",
+        "Plastic bottles",
+        "Paper straws",
+        "Cigarette butts",
+        "Aerosol cans",
+        "Razor blades",
+        "Poor fella",
+        "Dead memes",
+        "Old phones",
+        "Tiktokkers",
+        "Broken eggs",
+        "My mental health",
+        "Telemarketers",
+    ];
+
+    let random_string = crate_strings
+        .choose(&mut rand::thread_rng())
+        .unwrap()
+        .to_string();
+
     // spawn crate in cannon
     for cannon_ent in q_cannon.iter() {
         commands.entity(cannon_ent).with_children(|parent| {
@@ -490,7 +588,7 @@ fn on_enter_ready(
                         .with_rotation(Quat::from_euler(EulerRot::XYZ, 1.0, 0.0, 1.0)),
                     ..default()
                 },
-                Crate,
+                Crate(random_string.clone()),
                 Mass(0.5),
                 CurrentCrate,
             ));
@@ -511,7 +609,7 @@ struct Sun;
 struct Cannon;
 
 #[derive(Component)]
-struct Crate;
+struct Crate(String);
 
 #[derive(Component)]
 struct CurrentCrate;
@@ -986,7 +1084,7 @@ fn update_music_speed(
     // music_controller: Query<&AudioSink, With<Music>>,
     // sw: Option<Res<GameTime>>,
     time: Res<Time>,
-    q_current_crate: Query<(&Transform, &Velocity), With<CurrentCrate>>,
+    q_current_crate: Query<(&Transform, &Velocity, &Crate), With<CurrentCrate>>,
     whining_controller: Query<&AudioSink, With<WhiningSound>>,
 ) {
     if let Ok(whining_sink) = whining_controller.get_single() {
@@ -996,12 +1094,15 @@ fn update_music_speed(
         let mut target_volume = 0.0;
         let mut target_speed = 0.1;
 
-        if let Ok((crate_transform, crate_velocity)) = q_current_crate.get_single() {
+        if let Ok((crate_transform, crate_velocity, crate_str)) = q_current_crate.get_single() {
             let crate_pos = crate_transform.translation.xy();
             let crate_speed = crate_velocity.0.length();
+            let is_poor_fella = crate_str.0 == "Poor fella" || crate_str.0 == "Tiktokkers" || crate_str.0 == "Telemarketers";
 
-            target_volume = 0.1 + (crate_speed * 0.25);
-            target_speed = 1.0 + (crate_speed * 0.1);
+            if is_poor_fella {
+                target_volume = 0.1 + (crate_speed * 0.25);
+                target_speed = 1.0 + (crate_speed * 0.1);
+            }
         }
 
         let n = time.delta_seconds() * 6.0;
@@ -1024,6 +1125,7 @@ fn attach_debris_to_crate_collision(
         (Entity, &mut Transform),
         (With<Debris>, Without<PickedUp>, Without<CurrentCrate>),
     >,
+    slorp_audio_handle: Res<AssetHandle::<SlorpSound, AudioSource>>,
 ) {
     for (crate_ent, crate_transform, mut crate_mass) in q_crate.iter_mut() {
         for (debris_ent, mut debris_transform) in q_debris.iter_mut() {
@@ -1044,6 +1146,22 @@ fn attach_debris_to_crate_collision(
 
                 // increase crate mass
                 crate_mass.0 += 0.22;
+
+                // play slorp sound
+                commands.spawn((
+                    AudioBundle {
+                        source: slorp_audio_handle.handle.clone().into(),
+                        settings: PlaybackSettings {
+                            mode: PlaybackMode::Despawn,
+                            volume: Volume::Relative(VolumeLevel::new(0.5)),
+                            speed: 2.5,
+                            paused: false,
+                            ..default()
+                        },
+                        ..default()
+                    },
+                    SlorpSound,
+                ));
             }
         }
     }
@@ -1128,20 +1246,37 @@ fn remove_crate_on_sun_collision(
     asset_server: Res<AssetServer>,
     mut commands: Commands,
     mut score: ResMut<Score>,
-    mut q_crate: Query<(Entity, &GlobalTransform), With<Crate>>,
+    mut q_crate: Query<(Entity, &Crate, &GlobalTransform), With<Crate>>,
     q_sun: Query<&Transform, With<Sun>>,
     mut next_state: ResMut<NextState<GameState>>,
     explosion_mesh: Res<AssetHandle<Explosion, Mesh>>,
     explosion_mtl: Res<AssetHandle<Explosion, StandardMaterial>>,
     q_floating_debris: Query<Entity, (With<Debris>, Without<PickedUp>)>,
     mut level: ResMut<Level>,
+    mut kill_log: ResMut<KillLog>,
+    mut q_kill_text: Query<(Entity, &mut Style, &mut Text), With<KillLogText>>,
 ) {
-    for (crate_ent, crate_global_transform) in q_crate.iter_mut() {
+    for (crate_ent, crate_str, crate_global_transform) in q_crate.iter_mut() {
         for sun_transform in q_sun.iter() {
             let sun_pos = sun_transform.translation.xy();
             let crate_pos = crate_global_transform.translation().xy();
             let distance = sun_pos.distance(crate_pos);
             if distance < 13.0 {
+                // add crate to kill log
+                kill_log.0.push(crate_str.0.clone());
+
+                // update kill log text
+                for (ent, mut style, mut text) in q_kill_text.iter_mut() {
+                    // set visible
+                    style.display = Display::Flex;
+
+                    let kill_log_last_five: Vec<String> = kill_log.0.iter().rev().take(5).rev().cloned().collect();
+
+                    for section in text.sections.iter_mut() {
+                        section.value = format!("Incineration log:\n{}", kill_log_last_five.join("\n"));
+                    }
+                }
+
                 // remove crate
                 commands.entity(crate_ent).despawn_recursive();
 

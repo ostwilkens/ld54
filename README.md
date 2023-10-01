@@ -37,20 +37,20 @@
 - ~~Crates make a whining sound while circulating the sun~~
 - ~~Make blender cube cooler~~
 - ~~Visual power meter~~
+- ~~Incineration log~~
+- ~~Debris pickup sound (mergey splop)~~
 
 - Level tuning
 - Level 1-3 are good, level 4 needs a new element: moon/mercurius?
 - Self destruct crate after 10?s
 - Touch controls
 - New level / victory sound
-- Debris pickup sound (mergey splop)
 - Test in Chrome
 - Write short story/description
 - Give feedback to 100 games
 
 
 ### Wishlist
-- Text shows what just got disintegrated
 - Crate leaves a particle trail
 - Camera shake on death
 - Full screen flash on explosion
