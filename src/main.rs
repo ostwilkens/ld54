@@ -61,7 +61,7 @@ fn main() {
     )
     .insert_resource(ClearColor(Color::hsl(PRIMARY_COLOR_HUE * 360.0, 0.2, 0.1)))
     .insert_resource(Score(0))
-    .insert_resource(Level(3))
+    .insert_resource(Level(1))
     .insert_resource(FixedTime::new_from_secs(1.0 / 60.0))
     .insert_resource(LaunchPower(Stopwatch::new()))
     .insert_resource(PrimaryColorHue(PRIMARY_COLOR_HUE))
@@ -168,6 +168,9 @@ struct EarthDestroyedSound;
 #[derive(Component)]
 struct ScoreText;
 
+#[derive(Component)]
+struct InstructionText;
+
 #[derive(Resource)]
 struct KillLog(Vec<String>);
 
@@ -246,6 +249,24 @@ fn setup(
         .with_style(Style {
             position_type: PositionType::Absolute,
             margin: UiRect::new(Val::Auto, Val::Auto, Val::Vh(20.0), Val::Auto),
+            ..default()
+        }),
+    ));
+
+    // spawn instruction text
+    commands.spawn((
+        InstructionText,
+        TextBundle::from_section(
+            "Hold down mouse button to fire",
+            TextStyle {
+                font_size: 32.0,
+                color: Color::WHITE,
+                ..default()
+            },
+        )
+        .with_style(Style {
+            position_type: PositionType::Absolute,
+            margin: UiRect::new(Val::Auto, Val::Auto, Val::Auto, Val::Vh(30.0)),
             ..default()
         }),
     ));
@@ -341,6 +362,11 @@ fn setup(
     // load slorp sound
     commands.insert_resource(AssetHandle::<SlorpSound, AudioSource>::new(
         asset_server.load("slorp.ogg"),
+    ));
+
+    // load success sound
+    commands.insert_resource(AssetHandle::<SuccessSound, AudioSource>::new(
+        asset_server.load("success.ogg"),
     ));
 
     // load debris model
@@ -465,6 +491,9 @@ fn setup(
 
 #[derive(Component)]
 struct SlorpSound;
+
+#[derive(Component)]
+struct SuccessSound;
 
 // debris orbit the sun
 fn orbit_debris(
@@ -925,12 +954,19 @@ fn spin_debris(
 fn interact_play_button(
     mut q_button: Query<(&Interaction, &mut Style), (Changed<Interaction>, With<PlayButton>)>,
     mut next_state: ResMut<NextState<GameState>>,
+    mut q_instruction_text: Query<(Entity, &mut Style, &mut Text), (With<InstructionText>, Without<PlayButton>)>
 ) {
     if let Some((interaction, mut style)) = q_button.iter_mut().next() {
         match interaction {
             Interaction::Pressed => {
                 style.display = Display::None;
                 next_state.set(GameState::ReadyToLaunch);
+
+                // hide instruction text
+                for (ent, mut style, mut text) in q_instruction_text.iter_mut() {
+                    // set visible
+                    style.display = Display::None;
+                }
             }
             _ => {}
         };
@@ -950,6 +986,7 @@ fn on_enter_menu(
     mut commands: Commands,
     music_controller: Query<&AudioSink, With<Music>>,
     mut q_score_text: Query<(Entity, &mut Style, &mut Text), With<ScoreText>>,
+    mut q_instruction_text: Query<(Entity, &mut Style, &mut Text), (With<InstructionText>, Without<ScoreText>)>,
     level: Res<Level>,
 ) {
     // set music volume
@@ -969,6 +1006,12 @@ fn on_enter_menu(
         for section in text.sections.iter_mut() {
             section.value = format!("Level {}", level.0);
         }
+    }
+
+    // show instruction text
+    for (ent, mut style, mut text) in q_instruction_text.iter_mut() {
+        // set visible
+        style.display = Display::Flex;
     }
 }
 
@@ -1001,6 +1044,7 @@ fn on_enter_playing(
     // for mut style in q_score_text.iter_mut() {
     //     style.display = Display::None;
     // }
+    
 
     // start stopwatch
     commands.insert_resource(GameTime(Stopwatch::new()));
@@ -1192,14 +1236,16 @@ fn remove_crate_on_earth_collision(
     asset_server: Res<AssetServer>,
     mut commands: Commands,
     mut score: ResMut<Score>,
-    mut q_crate: Query<(Entity, &Transform), With<Crate>>,
+    mut q_crate: Query<(Entity, &Crate, &Transform), With<Crate>>,
     q_earth: Query<(Entity, &Transform), With<Earth>>,
     mut next_state: ResMut<NextState<GameState>>,
     explosion_mesh: Res<AssetHandle<Explosion, Mesh>>,
     explosion_mtl: Res<AssetHandle<Explosion, StandardMaterial>>,
     mut camera_shake: ResMut<CameraShake>,
+    mut kill_log: ResMut<KillLog>,
+    mut q_kill_text: Query<(Entity, &mut Style, &mut Text), With<KillLogText>>,
 ) {
-    for (crate_ent, crate_transform) in q_crate.iter_mut() {
+    for (crate_ent, crate_str, crate_transform) in q_crate.iter_mut() {
         for (earth_ent, earth_transform) in q_earth.iter() {
             let earth_pos = earth_transform.translation.xy();
             let crate_pos = crate_transform.translation.xy();
@@ -1207,6 +1253,24 @@ fn remove_crate_on_earth_collision(
             if distance < 5.0 {
                 // add camera shake
                 camera_shake.0 = 3.0;
+
+                // add crate to kill log
+                kill_log.0.push(crate_str.0.clone());
+                kill_log.0.push("Planet earth".to_string());
+
+                // update kill log text
+                for (ent, mut style, mut text) in q_kill_text.iter_mut() {
+                    // set visible
+                    style.display = Display::Flex;
+
+                    let kill_log_last_five: Vec<String> =
+                        kill_log.0.iter().rev().take(5).rev().cloned().collect();
+
+                    for section in text.sections.iter_mut() {
+                        section.value =
+                            format!("Incineration log:\n{}", kill_log_last_five.join("\n"));
+                    }
+                }
 
                 // remove crate
                 commands.entity(crate_ent).despawn_recursive();
@@ -1281,6 +1345,7 @@ fn remove_crate_on_sun_collision(
     mut kill_log: ResMut<KillLog>,
     mut q_kill_text: Query<(Entity, &mut Style, &mut Text), With<KillLogText>>,
     mut camera_shake: ResMut<CameraShake>,
+    success_audio_handle: Res<AssetHandle<SuccessSound, AudioSource>>,
 ) {
     for (crate_ent, crate_str, crate_global_transform) in q_crate.iter_mut() {
         for sun_transform in q_sun.iter() {
@@ -1327,6 +1392,22 @@ fn remove_crate_on_sun_collision(
                         ..default()
                     },
                     EarthDestroyedSound,
+                ));
+
+                // play success sound
+                commands.spawn((
+                    AudioBundle {
+                        source: success_audio_handle.handle.clone().into(),
+                        settings: PlaybackSettings {
+                            mode: PlaybackMode::Despawn,
+                            volume: Volume::Relative(VolumeLevel::new(0.8)),
+                            speed: 2.5,
+                            paused: false,
+                            ..default()
+                        },
+                        ..default()
+                    },
+                    SuccessSound,
                 ));
 
                 // spawn explosion

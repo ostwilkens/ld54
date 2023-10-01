@@ -9,6 +9,13 @@
 - GLSL shader for sun
 - Rotating blender cube for crate
 
+### Tools
+- Bevy engine
+- [my bevy template](https://github.com/ostwilkens/bevy_my_template)
+- Renoise + Vital synth
+- Audacity
+- Blender
+
 ### Todo
 - ~~Game idea~~
 - ~~Started from [my bevy template](https://github.com/ostwilkens/bevy_my_template)~~
@@ -41,12 +48,12 @@
 - ~~Debris pickup sound (mergey splop)~~
 - ~~Crate leaves a particle trail~~
 - ~~Camera shake on death~~
+- ~~Victory sound~~
 
 - Level tuning
 - Level 1-3 are good, level 4 needs a new element: moon/mercurius?
 - Self destruct crate after 10?s
 - Touch controls
-- New level / victory sound
 - Test in Chrome
 - Write short story/description
 - Give feedback to 100 games
