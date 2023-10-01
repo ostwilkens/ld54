@@ -62,12 +62,13 @@
 - ~~Finish game at level 5 and 2 less debris~~
 - ~~Level tuning~~
 - ~~Write short story/description~~
+- Cover image (640x512)
+- Tweet
 - Give feedback to 100 games
 
 
 ### Wishlist
 - Full screen flash on explosion
-- Logo 
 - Master bgm
 - Cheering pikmin sound when launching
 - Performance

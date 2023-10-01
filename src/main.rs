@@ -260,26 +260,6 @@ fn setup(
         }),
     ));
 
-    // spawn instruction text
-    if level.0 < 4 {
-        commands.spawn((
-            InstructionText,
-            TextBundle::from_section(
-                "Hold down mouse button to fire",
-                TextStyle {
-                    font_size: 32.0,
-                    color: Color::WHITE,
-                    ..default()
-                },
-            )
-            .with_style(Style {
-                position_type: PositionType::Absolute,
-                margin: UiRect::new(Val::Auto, Val::Auto, Val::Auto, Val::Vh(30.0)),
-                ..default()
-            }),
-        ));
-    }
-
     // music
     commands.spawn((
         AudioBundle {
@@ -415,6 +395,38 @@ fn setup(
             .with_rotation(Quat::from_rotation_x(PI / 2.0)),
         ..default()
     });
+
+    // spawn logo
+    let texture_handle = asset_server.load("logo.webp");
+    let quad_width = 80.0;
+    let quad_handle = meshes.add(Mesh::from(shape::Quad::new(Vec2::new(
+        quad_width,
+        quad_width * 0.346,
+    ))));
+    // this material renders the texture normally
+    let material_handle = std_materials.add(StandardMaterial {
+        base_color_texture: Some(texture_handle.clone()),
+        alpha_mode: AlphaMode::Add,
+        unlit: true,
+        ..default()
+    });
+    commands.spawn((PbrBundle {
+        mesh: quad_handle.clone(),
+        material: material_handle,
+        transform: Transform::from_xyz(0.0, 5.0, 0.0)
+            .with_rotation(Quat::from_rotation_x(-PI / 5.0)),
+        ..default()
+    }, Logo));
+    // commands.spawn((MaterialMeshBundle {
+    //     mesh: meshes.add(shape::Plane::from_size(100.0).into()).into(),
+    //     material: bg_materials.add(BackgroundMaterial {
+    //         color: Color::WHITE,
+    //         color_texture: asset_server.load("logo.webp"),
+    //     }),
+    //     transform: Transform::from_translation(vec3(0.0, 0.0, -100.0))
+    //         .with_rotation(Quat::from_rotation_x(PI / 2.0)),
+    //     ..default()
+    // }, Logo));
 
     // spawn sun
     commands.spawn((
@@ -648,7 +660,34 @@ fn on_enter_ready(
     mut commands: Commands,
     q_cannon: Query<Entity, With<Cannon>>,
     asset_server: Res<AssetServer>,
+    level: Res<Level>,
+    q_logo: Query<Entity, With<Logo>>,
 ) {
+    // despawn logo
+    for ent in q_logo.iter() {
+        commands.entity(ent).despawn_recursive();
+    }
+
+    // spawn instruction text
+    if level.0 < 2 {
+        commands.spawn((
+            InstructionText,
+            TextBundle::from_section(
+                "Hold down mouse button to fire",
+                TextStyle {
+                    font_size: 28.0,
+                    color: Color::WHITE,
+                    ..default()
+                },
+            )
+            .with_style(Style {
+                position_type: PositionType::Absolute,
+                margin: UiRect::new(Val::Auto, Val::Auto, Val::Auto, Val::Vh(15.0)),
+                ..default()
+            }),
+        ));
+    }
+
     // things that humanity fires into the sun
     let crate_strings = vec![
         "Car tires",
@@ -704,6 +743,9 @@ struct OriginalTransform(Transform);
 
 #[derive(Component)]
 struct Sun;
+
+#[derive(Component)]
+struct Logo;
 
 #[derive(Component)]
 struct Cannon;
@@ -1082,7 +1124,10 @@ fn on_enter_menu(
     level: Res<Level>,
     mut primary_color_hue: ResMut<PrimaryColorHue>,
     score: Res<Score>,
+    // q_instruction_text: Query<Entity, With<InstructionText>>,
 ) {
+    
+
     // set music volume
     for sink in music_controller.iter() {
         sink.set_volume(MENU_MUSIC_VOLUME);
@@ -1133,10 +1178,15 @@ fn on_enter_menu(
         }
     }
 
+    // // despawn instructiontext
+    // for ent in q_instruction_text.iter() {
+    // }
+
     // show instruction text
     for (ent, mut style, mut text) in q_instruction_text.iter_mut() {
+        commands.entity(ent).despawn_recursive();
         // set visible
-        style.display = Display::Flex;
+        // style.display = Display::Flex;
     }
 }
 
@@ -1165,10 +1215,10 @@ fn on_enter_playing(
     q_info_text: Query<Entity, With<InfoText>>,
     q_instruction_text: Query<Entity, With<InstructionText>>,
 ) {
-    // despawn InfoText
-    for ent in q_info_text.iter() {
-        commands.entity(ent).despawn_recursive();
-    }
+    // // despawn InfoText
+    // for ent in q_info_text.iter() {
+    //     commands.entity(ent).despawn_recursive();
+    // }
 
     // // if level > 2, hide instruction text
     // if level.0 > 2 {

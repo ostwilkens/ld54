@@ -41,7 +41,7 @@ impl<'w, 's> ButtonCommands<'w, 's> for Commands<'w, 's> {
                 height: Val::Px(100.0),
                 justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
-                margin: UiRect::all(Val::Auto),
+                margin: UiRect::new(Val::Auto, Val::Auto, Val::Auto, Val::Vh(30.0)),
                 border: UiRect {
                     left: Val::Px(1.0),
                     right: Val::Px(1.0),
